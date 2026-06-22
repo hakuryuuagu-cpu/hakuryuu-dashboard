@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual AI Office</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f0f1a; color: #e0e0f0;
+  height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+}
+header {
+  background: #1a1a2e; border-bottom: 1px solid #2a2a4a;
+  padding: 10px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+}
+header h1 { font-size: 15px; font-weight: 700; color: #a78bfa; letter-spacing: .05em; }
+#mode-label { font-size: 11px; color: #666; }
+.hbtn {
+  padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+  border: 1px solid #3a3a5a; color: #aaa; background: transparent; transition: all .2s;
+  margin-left: auto;
+}
+.hbtn:hover { border-color: #7c3aed; color: #a78bfa; }
+#demo-badge {
+  display: none; padding: 3px 10px; background: #4a2a7a; border: 1px solid #7c3aed;
+  border-radius: 12px; font-size: 11px; color: #a78bfa; cursor: pointer;
+}
+#demo-badge.show { display: inline-block; }
+
+/* API PANEL */
+#api-panel {
+  background: #1a1a2e; border-bottom: 1px solid #2a2a4a;
+  padding: 12px 20px; display: none; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+}
+#api-panel.show { display: flex; }
+.api-group { display: flex; flex-direction: column; gap: 3px; }
+.api-group label { font-size: 11px; color: #888; }
+.api-group input {
+  background: #0f0f1a; border: 1px solid #3a3a5a; color: #e0e0f0;
+  padding: 5px 10px; border-radius: 6px; font-size: 12px; width: 230px;
+}
+.api-group input::placeholder { color: #444; }
+#save-keys-btn {
+  padding: 6px 16px; background: #7c3aed; border: none; color: #fff;
+  border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+#demo-toggle-btn {
+  padding: 6px 14px; background: #1e1e35; border: 1px solid #3a3a5a;
+  color: #888; border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+#demo-toggle-btn.on { background: #2d1b52; border-color: #7c3aed; color: #a78bfa; }
+
+/* LAYOUT */
+.main { display: flex; flex: 1; overflow: hidden; }
+
+/* OFFICE MAP */
+.office-map {
+  flex: 1; padding: 14px; overflow-y: auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.room {
+  background: #1e1e35; border: 1px solid #2a2a4a; border-radius: 12px; padding: 12px;
+}
+.room.wide { grid-column: 1 / -1; border-color: #3a1a6a; background: #1a1030; }
+.room-title {
+  font-size: 11px; font-weight: 600; color: #777; text-transform: uppercase;
+  letter-spacing: .08em; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+}
+.room-dot { width: 6px; height: 6px; border-radius: 50%; background: #7c3aed; }
+.agents-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.agent {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  cursor: pointer; padding: 7px; border-radius: 10px; transition: background .2s;
+}
+.agent:hover { background: #2a2a4a; }
+.agent.active { background: #2a1a44; }
+.agent.speaking .av { box-shadow: 0 0 0 3px #a78bfa; animation: ring 1.2s infinite; }
+@keyframes ring { 0%,100%{box-shadow:0 0 0 3px #a78bfa88} 50%{box-shadow:0 0 0 6px #a78bfa22} }
+.av {
+  width: 44px; height: 44px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 20px;
+}
+.aname { font-size: 11px; font-weight: 600; color: #ccc; }
+.arole { font-size: 10px; color: #666; }
+.allm {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
+  letter-spacing: .03em;
+}
+.lc { background: #7c3aed22; color: #a78bfa; border: 1px solid #7c3aed44; }
+.lg { background: #10b98122; color: #34d399; border: 1px solid #10b98144; }
+.lm { background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f644; }
+.meeting-table {
+  width: 100%; height: 50px; background: #2a1a4a22; border: 1px solid #4a2a8a44;
+  border-radius: 25px; display: flex; align-items: center; justify-content: center;
+  color: #3a2a5a; font-size: 11px; margin: 8px 0;
+}
+#meeting-slots { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; min-height: 30px; }
+
+/* RIGHT PANEL */
+.panel {
+  width: 400px; background: #1a1a2e; border-left: 1px solid #2a2a4a;
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.panel-header {
+  padding: 12px 14px; border-bottom: 1px solid #2a2a4a;
+  display: flex; align-items: center; gap: 8px;
+}
+.panel-header h2 { font-size: 13px; font-weight: 600; color: #ccc; flex: 1; }
+.ptab {
+  padding: 3px 10px; border-radius: 4px; font-size: 11px; cursor: pointer;
+  border: 1px solid #3a3a5a; color: #888; background: transparent;
+}
+.ptab.active { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+.chat-area {
+  flex: 1; overflow-y: auto; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.msg { display: flex; gap: 8px; animation: fi .25s ease; }
+@keyframes fi { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:none} }
+.msg.user { flex-direction: row-reverse; }
+.mav {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.mbody { flex: 1; }
+.msg.user .mbody { text-align: right; }
+.mhead { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+.mname { font-size: 12px; font-weight: 600; }
+.mtag { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; }
+.mtext {
+  font-size: 12px; line-height: 1.6; color: #bbb;
+  background: #1e1e35; border: 1px solid #2a2a4a; border-radius: 8px; padding: 8px 10px;
+  text-align: left;
+}
+.msg.user .mtext { background: #2a1a44; border-color: #4a2a7a; }
+.mtext.thinking { color: #555; font-style: italic; }
+.sysmsg { text-align: center; font-size: 11px; color: #555; padding: 2px 0; }
+
+/* DECISIONS */
+#dec-panel { display: none; padding: 12px; overflow-y: auto; flex: 1; }
+#dec-panel.show { display: block; }
+.dcard {
+  background: #1e1e35; border: 1px solid #2a2a4a; border-radius: 8px;
+  padding: 12px; margin-bottom: 10px;
+}
+.dcard h3 { font-size: 12px; font-weight: 600; color: #a78bfa; margin-bottom: 8px; }
+.dcard p { font-size: 12px; color: #999; line-height: 1.5; margin-bottom: 4px; }
+.aitem {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #0f0f1a; border-radius: 6px; padding: 7px; margin-top: 6px;
+}
+.ow { font-size: 10px; padding: 2px 6px; background: #7c3aed33; color: #a78bfa; border-radius: 4px; white-space: nowrap; }
+.at { font-size: 11px; color: #ccc; }
+
+/* INPUT */
+.input-area { border-top: 1px solid #2a2a4a; padding: 10px; display: flex; flex-direction: column; gap: 7px; }
+.qa { display: flex; gap: 5px; flex-wrap: wrap; }
+.qbtn {
+  padding: 4px 11px; border-radius: 16px; font-size: 11px; cursor: pointer;
+  border: 1px solid #3a3a5a; color: #aaa; background: transparent; white-space: nowrap;
+}
+.qbtn:hover { border-color: #7c3aed; color: #a78bfa; }
+.qbtn.red { color: #f87171; border-color: #dc262644; }
+.qbtn.red:hover { border-color: #dc2626; background: #dc262611; }
+.irow { display: flex; gap: 7px; }
+#msg-in {
+  flex: 1; background: #0f0f1a; border: 1px solid #3a3a5a; color: #e0e0f0;
+  padding: 7px 11px; border-radius: 8px; font-size: 12px; outline: none;
+}
+#msg-in:focus { border-color: #7c3aed; }
+#msg-in::placeholder { color: #444; }
+#send-btn {
+  padding: 7px 14px; background: #7c3aed; border: none; color: #fff;
+  border-radius: 8px; cursor: pointer; font-size: 12px;
+}
+#send-btn:disabled { background: #3a3a5a; cursor: not-allowed; }
+
+/* STATUS */
+.statusbar {
+  padding: 5px 16px; background: #0a0a14; border-top: 1px solid #1a1a2e;
+  font-size: 10px; color: #444; display: flex; align-items: center; gap: 7px; flex-shrink: 0;
+}
+.sdot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+.sdot.idle { background: #444; }
+.sdot.busy { background: #f59e0b; animation: ring 1s infinite; }
+
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏢 Virtual AI Office</h1>
+  <span id="mode-label">フリー会話モード</span>
+  <span id="demo-badge" onclick="toggleDemo()">🎭 デモモード ON — クリックで OFF</span>
+  <button class="hbtn" onclick="document.getElementById('api-panel').classList.toggle('show')">🔑 APIキー設定</button>
+</header>
+
+<div id="api-panel">
+  <div class="api-group">
+    <label>Anthropic (Claude)</label>
+    <input type="password" id="k-ant" placeholder="sk-ant-..." />
+  </div>
+  <div class="api-group">
+    <label>OpenAI (GPT-4o)</label>
+    <input type="password" id="k-oai" placeholder="sk-..." />
+  </div>
+  <div class="api-group">
+    <label>Google (Gemini)</label>
+    <input type="password" id="k-gem" placeholder="AIza..." />
+  </div>
+  <button id="save-keys-btn" onclick="saveKeys()">保存 &amp; デモOFF</button>
+  <button id="demo-toggle-btn" onclick="toggleDemo()">🎭 デモモード</button>
+</div>
+
+<div class="main">
+  <div class="office-map">
+
+    <div class="room">
+      <div class="room-title"><span class="room-dot"></span>経営室</div>
+      <div class="agents-row">
+        <div class="agent" id="ag-miyuu" onclick="selectAgent('miyuu')">
+          <div class="av" style="background:#2d1b69">👩‍💼</div>
+          <div class="aname">ミユ</div><div class="arole">CEO</div>
+          <div class="allm lc">Claude</div>
+        </div>
+        <div class="agent" id="ag-shohei" onclick="selectAgent('shohei')">
+          <div class="av" style="background:#1b3a2d">👨‍💼</div>
+          <div class="aname">ショウヘイ</div><div class="arole">COO</div>
+          <div class="allm lg">GPT-4o</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="room">
+      <div class="room-title"><span class="room-dot" style="background:#3b82f6"></span>開発室</div>
+      <div class="agents-row">
+        <div class="agent" id="ag-ken" onclick="selectAgent('ken')">
+          <div class="av" style="background:#1b2a3a">👨‍💻</div>
+          <div class="aname">ケン</div><div class="arole">CTO</div>
+          <div class="allm lm">Gemini</div>
+        </div>
+        <div class="agent" id="ag-alex" onclick="selectAgent('alex')">
+          <div class="av" style="background:#1b2a3a">🧑‍💻</div>
+          <div class="aname">アレックス</div><div class="arole">エンジニア</div>
+          <div class="allm lg">GPT-4o</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="room">
+      <div class="room-title"><span class="room-dot" style="background:#f59e0b"></span>営業・マーケ室</div>
+      <div class="agents-row">
+        <div class="agent" id="ag-sara" onclick="selectAgent('sara')">
+          <div class="av" style="background:#3a2a1b">👩‍🔬</div>
+          <div class="aname">サラ</div><div class="arole">CSO/営業</div>
+          <div class="allm lc">Claude</div>
+        </div>
+        <div class="agent" id="ag-mark" onclick="selectAgent('mark')">
+          <div class="av" style="background:#3a2a1b">👨‍🎨</div>
+          <div class="aname">マーク</div><div class="arole">CMO</div>
+          <div class="allm lg">GPT-4o</div>
+        </div>
+        <div class="agent" id="ag-jon" onclick="selectAgent('jon')">
+          <div class="av" style="background:#2a1b3a">🧑‍💼</div>
+          <div class="aname">ジョン</div><div class="arole">アナリスト</div>
+          <div class="allm lm">Gemini</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="room">
+      <div class="room-title"><span class="room-dot" style="background:#f97316"></span>CEO Room</div>
+      <div style="font-size:11px;color:#555;margin-bottom:8px">戦略レビュー・1on1スペース</div>
+      <div style="display:flex;gap:6px">
+        <span style="font-size:10px;background:#1e1e35;border:1px solid #2a2a4a;border-radius:5px;padding:5px 9px;color:#777">📊 Dashboard</span>
+        <span style="font-size:10px;background:#1e1e35;border:1px solid #2a2a4a;border-radius:5px;padding:5px 9px;color:#777">🎯 KPI 87%</span>
+      </div>
+    </div>
+
+    <div class="room wide">
+      <div class="room-title"><span class="room-dot" style="background:#ec4899"></span>会議室 A</div>
+      <div class="meeting-table">会議テーブル</div>
+      <div id="meeting-slots">
+        <span style="font-size:11px;color:#555">「🤝 会議しよう」で全員召集</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <h2 id="panel-title">💬 チャット</h2>
+      <button class="ptab active" id="tab-chat" onclick="switchTab('chat')">チャット</button>
+      <button class="ptab" id="tab-dec" onclick="switchTab('dec')">意思決定</button>
+    </div>
+    <div class="chat-area" id="chat-area"></div>
+    <div id="dec-panel">
+      <p style="font-size:12px;color:#555;margin-bottom:12px">会議終了後、ここに意思決定とアクションが表示されます</p>
+    </div>
+    <div class="input-area">
+      <div class="qa">
+        <button class="qbtn" onclick="quickAction('briefing')">📋 ブリーフィング</button>
+        <button class="qbtn" onclick="quickAction('meeting')">🤝 会議しよう</button>
+        <button class="qbtn" onclick="quickAction('market')">📈 市場動向</button>
+        <button class="qbtn" onclick="quickAction('tasks')">✅ タスク整理</button>
+        <button class="qbtn red" onclick="quickAction('end')">🔚 会議終了</button>
+      </div>
+      <div class="irow">
+        <input id="msg-in" type="text" placeholder="エージェントに話しかける… (Enter)"
+          onkeydown="if(event.key==='Enter')sendMessage()" />
+        <button id="send-btn" onclick="sendMessage()">送信</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <div class="sdot idle" id="sdot"></div>
+  <span id="stxt">待機中</span>
+  <span style="margin-left:auto;color:#333">Claude · GPT-4o · Gemini</span>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+let keys  = { ant: '', oai: '', gem: '' };
+let demo  = false;
+let busy  = false;
+let sel   = 'shohei';
+let isMtg = false;
+let mtgLog = [];
+let history = [];
+
+// ── AGENTS ─────────────────────────────────────────────
+const A = {
+  miyuu:  { n:'ミユ',       r:'CEO',        e:'👩‍💼', llm:'claude', c:'#a78bfa',
+    sys:'あなたはスタートアップCEOのミユです。ビジョン・戦略・投資家の観点で発言します。日本語で3〜5文、簡潔に。' },
+  shohei: { n:'ショウヘイ', r:'COO',        e:'👨‍💼', llm:'gpt',    c:'#34d399',
+    sys:'あなたはCOOのショウヘイです。オペレーション・チーム効率・タスク管理の観点で発言します。日本語で3〜5文、簡潔に。' },
+  ken:    { n:'ケン',       r:'CTO',        e:'👨‍💻', llm:'gemini', c:'#60a5fa',
+    sys:'あなたはCTOのケンです。技術・アーキテクチャ・開発スピードの観点で発言します。日本語で3〜5文、簡潔に。' },
+  sara:   { n:'サラ',       r:'CSO/営業',   e:'👩‍🔬', llm:'claude', c:'#fb923c',
+    sys:'あなたはCSOのサラです。営業パイプライン・顧客・収益の観点で発言します。日本語で3〜5文、簡潔に。' },
+  mark:   { n:'マーク',     r:'CMO',        e:'👨‍🎨', llm:'gpt',    c:'#f472b6',
+    sys:'あなたはCMOのマークです。マーケティング・ブランド・市場動向の観点で発言します。日本語で3〜5文、簡潔に。' },
+  alex:   { n:'アレックス', r:'エンジニア', e:'🧑‍💻', llm:'gpt',    c:'#67e8f9',
+    sys:'あなたはエンジニアのアレックスです。実装・バグ・スプリントの観点で発言します。日本語で3〜5文、簡潔に。' },
+  jon:    { n:'ジョン',     r:'アナリスト', e:'🧑‍💼', llm:'gemini', c:'#a3e635',
+    sys:'あなたはアナリストのジョンです。データ・KPI・競合分析の観点で発言します。日本語で3〜5文、簡潔に。' },
+};
+const MTG = ['miyuu','shohei','ken','sara','mark'];
+
+// ── DEMO RESPONSES ─────────────────────────────────────
+const DEMO = {
+  miyuu:  ['今期はARR 1億円突破を最優先にします。エンタープライズ展開を加速し、投資家への説明責任も果たしながらチームの実行力を高めていきます。',
+           '競合が価格競争に入っている今こそ、プロダクトの差別化で勝ちに行くチャンスです。大きなビジョンを持ちながらも、足元の実行を怠らないようにしましょう。'],
+  shohei: ['今週の優先タスクは①新機能リリースのQAチェック、②採用面接5件、③Q3 OKR中間レビューです。チームキャパが逼迫しているのでスコープ調整が必要かもしれません。',
+           'スプリント消化率が先週比15%下がっています。ブロッカーを明日中に洗い出して解消したいです。'],
+  ken:    ['技術負債が少し気になっています。新機能追加のスピードを上げるには、まずAPIレスポンスタイムを改善する必要があります。',
+           'インフラコストが先月比120%に増加しています。クエリ最適化で30〜40%削減できると見ています。'],
+  sara:   ['今週のパイプラインは商談17件、クローズ直前が4件あります。TechCorp社との交渉が最終段階で今週中に契約締結できそうです。',
+           '顧客から「オンボーディングが複雑」という声が増えています。プロダクトチームと連携してUX改善をしたいです。'],
+  mark:   ['競合のBeta社が先週Series Bを調達しました。ただ彼らはエンタープライズ向けなので、SMB市場は引き続き私たちのチャンスです。',
+           'コンテンツマーケティングの効果が出てきました。ブログ経由のオーガニック流入が先月比40%増です。'],
+  alex:   ['Sprint 7の完了率は78%です。残り2つのissueが今日中にマージできそうです。P1バグはゼロです。',
+           'APIの新エンドポイント実装が完了しました。テストカバレッジ92%を確保しています。'],
+  jon:    ['先月のDAUが前月比18%増加しています。モバイルユーザーが全体の61%を占めています。',
+           '競合3社と比べてオンボーディング完了率が15%低いです。ここを改善すれば月次収益に直接インパクトが出ます。'],
+};
+
+// ── UI HELPERS ─────────────────────────────────────────
+function setStatus(state, txt) {
+  document.getElementById('sdot').className = 'sdot ' + state;
+  document.getElementById('stxt').textContent = txt;
+}
+function sysMsg(txt) {
+  const d = document.createElement('div');
+  d.className = 'sysmsg'; d.textContent = txt;
+  document.getElementById('chat-area').appendChild(d);
+  scrollChat();
+}
+function scrollChat() {
+  const c = document.getElementById('chat-area');
+  c.scrollTop = c.scrollHeight;
+}
+function speaking(id, on) {
+  document.getElementById('ag-' + id)?.classList.toggle('speaking', on);
+}
+function selectAgent(id) {
+  document.getElementById('ag-' + sel)?.classList.remove('active');
+  sel = id;
+  document.getElementById('ag-' + id)?.classList.add('active');
+  const a = A[id];
+  document.getElementById('panel-title').textContent = `${a.e} ${a.n} (${a.r})`;
+  document.getElementById('msg-in').placeholder = `${a.n}に話しかける… (Enter)`;
+}
+function switchTab(t) {
+  document.getElementById('chat-area').style.display = t === 'chat' ? 'flex' : 'none';
+  document.getElementById('dec-panel').classList.toggle('show', t === 'dec');
+  document.getElementById('tab-chat').classList.toggle('active', t === 'chat');
+  document.getElementById('tab-dec').classList.toggle('active', t === 'dec');
+}
+function llmLabel(llm) {
+  return llm === 'claude' ? 'Claude' : llm === 'gpt' ? 'GPT-4o' : 'Gemini';
+}
+function llmClass(llm) {
+  return llm === 'claude' ? 'lc' : llm === 'gpt' ? 'lg' : 'lm';
+}
+function addMsg(id, text, streaming) {
+  const a = A[id]; const uid = 'x' + Date.now();
+  document.getElementById('chat-area').insertAdjacentHTML('beforeend', `
+    <div class="msg" id="${uid}">
+      <div class="mav" style="background:${a.c}22;border:1px solid ${a.c}44">${a.e}</div>
+      <div class="mbody">
+        <div class="mhead">
+          <span class="mname" style="color:${a.c}">${a.n}</span>
+          <span class="mtag" style="background:${a.c}22;color:${a.c};border:1px solid ${a.c}44">${a.r}</span>
+          <span class="mtag ${llmClass(a.llm)}">${llmLabel(a.llm)}</span>
+        </div>
+        <div class="mtext${streaming?' thinking':''}" id="t${uid}">${text}</div>
+      </div>
+    </div>`);
+  scrollChat(); return uid;
+}
+function addUserMsg(txt) {
+  document.getElementById('chat-area').insertAdjacentHTML('beforeend', `
+    <div class="msg user">
+      <div class="mav" style="background:#3a3a5a">🧑</div>
+      <div class="mbody"><div class="mtext">${txt}</div></div>
+    </div>`);
+  scrollChat();
+}
+
+// ── KEY MANAGEMENT ─────────────────────────────────────
+function saveKeys() {
+  keys.ant = document.getElementById('k-ant').value.trim();
+  keys.oai = document.getElementById('k-oai').value.trim();
+  keys.gem = document.getElementById('k-gem').value.trim();
+  document.getElementById('api-panel').classList.remove('show');
+  if (demo) { demo = false; updateDemoUI(); }
+  const ks = [keys.ant && 'Claude', keys.oai && 'GPT-4o', keys.gem && 'Gemini'].filter(Boolean);
+  sysMsg(`✅ APIキー保存（${ks.join('・')}）— デモモードOFF`);
+}
+function toggleDemo() {
+  demo = !demo; updateDemoUI();
+  sysMsg(demo ? '🎭 デモモードON — 固定応答を使用' : '✅ デモモードOFF — APIキーを使用');
+}
+function updateDemoUI() {
+  const badge = document.getElementById('demo-badge');
+  const btn   = document.getElementById('demo-toggle-btn');
+  badge.classList.toggle('show', demo);
+  btn.classList.toggle('on', demo);
+  btn.textContent = demo ? '🎭 デモモード ON' : '🎭 デモモード OFF';
+}
+
+// ── LLM CALLS ──────────────────────────────────────────
+async function callLLM(llm, sys, msgs) {
+  if (demo) {
+    // デモ: caller uses agentId anyway
+    throw new Error('__demo__');
+  }
+  if (llm === 'claude') {
+    if (!keys.ant) throw new Error('Anthropic APIキーが未設定です');
+    const r = await fetch('/api/claude', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ apiKey: keys.ant, system: sys, messages: msgs })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    return d.content[0].text;
+  }
+  if (llm === 'gpt') {
+    if (!keys.oai) throw new Error('OpenAI APIキーが未設定です');
+    const r = await fetch('/api/gpt', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ apiKey: keys.oai, messages:[{role:'system',content:sys},...msgs] })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    return d.choices[0].message.content;
+  }
+  if (llm === 'gemini') {
+    if (!keys.gem) throw new Error('Google APIキーが未設定です');
+    const contents = msgs.map((m,i)=>({
+      role: m.role==='assistant'?'model':'user',
+      parts:[{text: i===0 ? sys+'\n\n---\n'+m.content : m.content}]
+    }));
+    if (!contents.length) contents.push({role:'user',parts:[{text:sys}]});
+    const r = await fetch('/api/gemini', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ apiKey: keys.gem, contents })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error?.message || JSON.stringify(d));
+    return d.candidates[0].content.parts[0].text;
+  }
+}
+
+async function agentSpeak(id, prompt, ctx=[]) {
+  const a = A[id];
+  speaking(id, true);
+  const uid = addMsg(id, '考え中…', true);
+  try {
+    let reply;
+    if (demo) {
+      await sleep(600 + Math.random()*600);
+      const pool = DEMO[id];
+      reply = pool[Math.floor(Math.random()*pool.length)];
+    } else {
+      reply = await callLLM(a.llm, a.sys, [...ctx, {role:'user', content: prompt}]);
+    }
+    document.getElementById('t'+uid).className = 'mtext';
+    document.getElementById('t'+uid).textContent = reply;
+    return reply;
+  } catch(e) {
+    document.getElementById('t'+uid).className = 'mtext';
+    document.getElementById('t'+uid).textContent = '⚠️ ' + e.message;
+    return null;
+  } finally {
+    speaking(id, false);
+  }
+}
+
+// ── MEETING ────────────────────────────────────────────
+function updateMtgRoom(on) {
+  const el = document.getElementById('meeting-slots');
+  if (on) {
+    el.innerHTML = MTG.map(id=>{
+      const a=A[id];
+      return `<div class="agent" style="pointer-events:none">
+        <div class="av" style="background:${a.c}22;border:1px solid ${a.c}44">${a.e}</div>
+        <div class="aname">${a.n}</div><div class="arole">${a.r}</div>
+      </div>`;
+    }).join('');
+  } else {
+    el.innerHTML = '<span style="font-size:11px;color:#555">「🤝 会議しよう」で全員召集</span>';
+  }
+}
+
+async function startMeeting(topic) {
+  if (busy) return;
+  busy = true; isMtg = true; mtgLog = [];
+  updateMtgRoom(true);
+  document.getElementById('mode-label').textContent = '🔴 会議中';
+  setStatus('busy', '会議進行中…');
+  sysMsg(`━━ 会議開始: ${topic} ━━`);
+
+  for (const id of MTG) {
+    const a = A[id];
+    const prev = mtgLog.map(m=>`【${m.n}(${m.r})】: ${m.t}`).join('\n');
+    const prompt = mtgLog.length === 0
+      ? `会議テーマ: "${topic}"\n\n${a.r}の立場から最初の意見を述べてください。`
+      : `会議テーマ: "${topic}"\n\nこれまでの発言:\n${prev}\n\n上記を踏まえて${a.r}の立場から意見を述べてください。`;
+    const reply = await agentSpeak(id, prompt);
+    if (reply) mtgLog.push({n:a.n, r:a.r, id, t:reply});
+    await sleep(300);
+  }
+  setStatus('idle', '会議中（追加発言可能）');
+  sysMsg('💬 追加の議題を入力するか「🔚 会議終了」で締めてください');
+  busy = false;
+}
+
+async function endMeeting() {
+  if (!isMtg || busy) return;
+  busy = true; isMtg = false;
+  sysMsg('━━ 会議終了・意思決定を抽出中… ━━');
+  setStatus('busy', '抽出中…');
+  updateMtgRoom(false);
+  document.getElementById('mode-label').textContent = 'フリー会話モード';
+
+  const transcript = mtgLog.map(m=>`【${m.n}(${m.r})】: ${m.t}`).join('\n\n');
+  const ep = `以下の会議議事録から意思決定とアクションをJSON形式で抽出してください:\n${transcript}\n\n形式: {"decisions":["..."],"actions":[{"owner":"担当者名","task":"内容"}]}`;
+  let extracted = null;
+  try {
+    let raw;
+    if (demo) {
+      raw = '{"decisions":["エンタープライズ展開を優先する","技術負債解消のリファクタリングをSprint 8に追加"],"actions":[{"owner":"ショウヘイ","task":"Q3 OKRのスコープ調整を今週中に完了"},{"owner":"ケン","task":"APIレスポンス改善の設計書を作成"},{"owner":"サラ","task":"TechCorp社との契約を今週中にクローズ"}]}';
+    } else if (keys.ant) {
+      raw = await callLLM('claude', '会議議事録から意思決定とアクションをJSONのみで抽出してください。', [{role:'user',content:ep}]);
+    } else if (keys.oai) {
+      raw = await callLLM('gpt', '会議議事録から意思決定とアクションをJSONのみで抽出してください。', [{role:'user',content:ep}]);
+    }
+    if (raw) { const m = raw.match(/\{[\s\S]*\}/); if (m) extracted = JSON.parse(m[0]); }
+  } catch(e) { console.error(e); }
+
+  const panel = document.getElementById('dec-panel');
+  panel.innerHTML = '';
+  if (extracted) {
+    if (extracted.decisions?.length) {
+      panel.insertAdjacentHTML('beforeend', `<div class="dcard"><h3>📌 意思決定</h3>${extracted.decisions.map(d=>`<p>• ${d}</p>`).join('')}</div>`);
+    }
+    if (extracted.actions?.length) {
+      panel.insertAdjacentHTML('beforeend', `<div class="dcard"><h3>✅ ネクストアクション</h3>${extracted.actions.map(a=>`<div class="aitem"><span class="ow">${a.owner}</span><span class="at">${a.task}</span></div>`).join('')}</div>`);
+    }
+  } else {
+    panel.innerHTML = '<p style="font-size:12px;color:#555">抽出できませんでした。APIキーを確認してください。</p>';
+  }
+  switchTab('dec');
+  sysMsg('✅ 会議終了。「意思決定」タブで確認してください。');
+  setStatus('idle', '待機中');
+  busy = false;
+}
+
+// ── QUICK ACTIONS ──────────────────────────────────────
+async function quickAction(type) {
+  if (busy) return;
+  if (type === 'end')  { await endMeeting(); return; }
+  if (type === 'meeting') { await startMeeting('今日の重要課題について各自の観点から意見を聞かせてください'); return; }
+  busy = true; setStatus('busy', '処理中…');
+  if (type === 'briefing') {
+    sysMsg('━━ 今日のブリーフィング ━━');
+    sysMsg('── 営業パイプライン (サラ) ──');
+    await agentSpeak('sara', '今日の営業パイプライン状況をブリーフィングしてください。商談数・重点案件・今週のアクションを教えてください。');
+    sysMsg('── 市場動向 (マーク) ──');
+    await agentSpeak('mark', '今日の市場動向と競合情報をブリーフィングしてください。');
+    sysMsg('── 優先タスク (ショウヘイ) ──');
+    await agentSpeak('shohei', '今日チームとして最優先すべき3つのことを整理してください。');
+  } else if (type === 'market') {
+    await agentSpeak('mark', '現在の市場トレンド・競合の動き・私たちが注目すべき点を詳しく分析してください。');
+  } else if (type === 'tasks') {
+    await agentSpeak('shohei', '今日の優先タスクとチームのフォーカスポイントを整理してください。誰が何をすべきか明確にしてください。');
+  }
+  setStatus('idle', '待機中');
+  busy = false;
+}
+
+// ── SEND MESSAGE ──────────────────────────────────────
+async function sendMessage() {
+  const inp = document.getElementById('msg-in');
+  const txt = inp.value.trim(); if (!txt || busy) return;
+  inp.value = '';
+  addUserMsg(txt);
+
+  // 会議トリガー
+  if (/会議|ミーティング|集合|集まって/.test(txt) && !isMtg) {
+    await startMeeting(txt); return;
+  }
+  // 会議終了トリガー
+  if (/終了|終わり|まとめ|クローズ/.test(txt) && isMtg) {
+    await endMeeting(); return;
+  }
+
+  busy = true;
+  document.getElementById('send-btn').disabled = true;
+  setStatus('busy', '返答中…');
+
+  if (isMtg) {
+    // 業務無関係チェック
+    const biz = /戦略|売上|マーケ|営業|開発|技術|コスト|チーム|タスク|プロダクト|競合|市場|採用|KPI|スプリント|予算|OKR|顧客|パイプライン|ビジネス|会議|製品|サービス/;
+    if (!biz.test(txt)) {
+      await agentSpeak('miyuu', `会議外の質問への対応として: "${txt}" — CEOの立場から簡潔に答えてください。`);
+    } else {
+      for (const id of MTG) {
+        const a = A[id];
+        const prev = mtgLog.slice(-4).map(m=>`【${m.n}】: ${m.t}`).join('\n');
+        const p = `追加議題: "${txt}"\n${prev ? `\nこれまでの会話:\n${prev}` : ''}\n\n${a.r}の立場から意見を述べてください。`;
+        const reply = await agentSpeak(id, p);
+        if (reply) mtgLog.push({n:a.n, r:a.r, id, t:reply});
+        await sleep(200);
+      }
+    }
+  } else {
+    history.push({role:'user', content:txt});
+    const reply = await agentSpeak(sel, txt, history.slice(0,-1));
+    if (reply) history.push({role:'assistant', content:reply});
+  }
+
+  setStatus('idle', isMtg ? '会議中（追加発言可能）' : '待機中');
+  busy = false;
+  document.getElementById('send-btn').disabled = false;
+}
+
+function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
+
+// ── INIT ──────────────────────────────────────────────
+window.addEventListener('load', () => {
+  selectAgent('shohei');
+  sysMsg('Virtual AI Office へようこそ 👋');
+  // file:// で開いた場合の警告
+  if (window.location.protocol === 'file:') {
+    sysMsg('⚠️ ファイルを直接開いています。APIを使うには server.py を起動してください');
+    sysMsg('  → ターミナル: python3 server.py  →  http://localhost:3001 を開く');
+  } else {
+    sysMsg('サーバー経由で起動中 ✅  APIキーを設定してお使いください');
+  }
+  setTimeout(()=>sysMsg('💡 「📋 ブリーフィング」で全エージェントから報告を受けられます'), 400);
+});
+</script>
+</body>
+</html>
