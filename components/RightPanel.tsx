@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import type { AIAgent, ActivityMessage, MinutesEntry, QAEntry, DiscussionRound, QAInsights, ResearchNote } from '@/lib/types'
 import DailyRecordTab from './DailyRecordTab'
 import ResearchNoteTab from './ResearchNoteTab'
+import AutoCollectTab from './AutoCollectTab'
 
-type TabKey = 'activity' | 'minutes' | 'qa' | 'daily' | 'research'
+type TabKey = 'activity' | 'minutes' | 'qa' | 'daily' | 'research' | 'autocollect'
 type QAViewMode = 'final' | 'discussion'
 
 interface Props {
@@ -17,11 +18,12 @@ interface Props {
 }
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
-  { key: 'activity',  label: 'ライブ',   emoji: '🔴' },
-  { key: 'minutes',   label: '議事録',   emoji: '📋' },
-  { key: 'qa',        label: '質問',     emoji: '💬' },
-  { key: 'daily',     label: '日次',     emoji: '📊' },
-  { key: 'research',  label: '調査メモ', emoji: '📌' },
+  { key: 'activity',    label: 'ライブ',   emoji: '🔴' },
+  { key: 'minutes',     label: '議事録',   emoji: '📋' },
+  { key: 'qa',          label: '質問',     emoji: '💬' },
+  { key: 'daily',       label: '日次',     emoji: '📊' },
+  { key: 'research',    label: '調査メモ', emoji: '📌' },
+  { key: 'autocollect', label: '自動収集', emoji: '🤖' },
 ]
 
 const QUICK_QUESTIONS = [
@@ -359,6 +361,13 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
           externalNote={pendingResearch}
           onExternalNoteHandled={() => setPendingResearch(null)}
         />
+      )}
+
+      {/* ── AUTO COLLECT ────────────────────────── */}
+      {tab === 'autocollect' && (
+        <div className="flex-1 overflow-y-auto">
+          <AutoCollectTab />
+        </div>
       )}
     </div>
   )
