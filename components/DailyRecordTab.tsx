@@ -127,7 +127,7 @@ export default function DailyRecordTab({ onSaveToResearch }: Props) {
   const snsTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const flashSaved = (id: string) => {
-    setSavedIds(prev => new Set([...prev, id]))
+    setSavedIds(prev => new Set(Array.from(prev).concat(id)))
     setTimeout(() => setSavedIds(prev => { const n = new Set(prev); n.delete(id); return n }), 2000)
   }
 
