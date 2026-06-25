@@ -4,6 +4,21 @@ import { useState, useEffect } from 'react'
 import type { ResearchNote, ResearchCategory } from '@/lib/types'
 import { supabase } from '@/lib/supabase'
 
+interface AnalysisRound {
+  model: 'GPT' | 'Gemini' | 'Claude'
+  role: string
+  perspective: string
+  content: string
+}
+
+const MODEL_COLOR: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  GPT:    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  Gemini: { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
+  Claude: { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',  dot: 'bg-orange-500'  },
+}
+
+const MODEL_EMOJI: Record<string, string> = { GPT: '🟢', Gemini: '🔵', Claude: '🟠' }
+
 const CATEGORIES: ResearchCategory[] = [
   '食べログ', 'Google評価', '競合調査', '市場調査', 'SNS・トレンド', 'AIの回答', 'その他'
 ]
@@ -152,12 +167,14 @@ interface Props {
 }
 
 export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }: Props) {
-  const [notes, setNotes]           = useState<ResearchNote[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [showForm, setShowForm]     = useState(false)
-  const [filterCat, setFilterCat]   = useState<ResearchCategory | 'すべて'>('すべて')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [prefill, setPrefill]       = useState<Partial<ResearchNote> | undefined>()
+  const [notes, setNotes]             = useState<ResearchNote[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [showForm, setShowForm]       = useState(false)
+  const [filterCat, setFilterCat]     = useState<ResearchCategory | 'すべて'>('すべて')
+  const [expandedId, setExpandedId]   = useState<string | null>(null)
+  const [prefill, setPrefill]         = useState<Partial<ResearchNote> | undefined>()
+  const [analysisMap, setAnalysisMap] = useState<Record<string, AnalysisRound[]>>({})
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null)
 
   // Supabaseからデータ読み込み
   const loadNotes = async () => {
@@ -218,6 +235,25 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
       }
     } catch (e) {
       console.error('Failed to delete note:', e)
+    }
+  }
+
+  const runAnalysis = async (note: ResearchNote) => {
+    setAnalyzingId(note.id)
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: note.title, content: note.content, type: 'research' }),
+      })
+      const data = await res.json()
+      if (data.rounds) {
+        setAnalysisMap(prev => ({ ...prev, [note.id]: data.rounds }))
+      }
+    } catch (e) {
+      console.error('Analysis failed:', e)
+    } finally {
+      setAnalyzingId(null)
     }
   }
 
@@ -284,6 +320,9 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
         {filtered.map(note => {
           const s = CATEGORY_STYLE[note.category]
           const isOpen = expandedId === note.id
+          const rounds = analysisMap[note.id]
+          const isAnalyzing = analyzingId === note.id
+
           return (
             <div key={note.id} className="rounded-xl border border-gray-200 overflow-hidden fade-in">
               <button
@@ -307,7 +346,8 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
               </button>
 
               {isOpen && (
-                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-2 fade-in">
+                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-2.5 fade-in">
+                  {/* Note body */}
                   <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{note.content}</p>
                   {note.source && (
                     <a href={note.source} target="_blank" rel="noopener noreferrer"
@@ -315,6 +355,76 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
                       🔗 {note.source}
                     </a>
                   )}
+
+                  {/* AI Analysis */}
+                  <div className="pt-1.5 border-t border-gray-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[9px] font-bold text-gray-500">🤖 AIマルチ分析</p>
+                      <button
+                        onClick={() => runAnalysis(note)}
+                        disabled={isAnalyzing}
+                        className={`text-[9px] font-bold px-2 py-1 rounded-lg transition-colors flex items-center gap-1 ${
+                          isAnalyzing
+                            ? 'bg-gray-100 text-gray-400'
+                            : rounds
+                            ? 'text-gray-400 hover:text-indigo-600'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        }`}
+                      >
+                        {isAnalyzing
+                          ? <><span className="animate-pulse">●</span> 分析中...</>
+                          : rounds ? '🔄 再分析' : '▶ 多角分析'}
+                      </button>
+                    </div>
+
+                    {isAnalyzing && (
+                      <div className="space-y-1.5">
+                        {['GPT', 'Gemini', 'Claude'].map(m => (
+                          <div key={m} className="bg-white rounded-lg p-2 animate-pulse">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <div className="w-1.5 h-1.5 rounded-full bg-gray-200" />
+                              <div className="h-2 bg-gray-200 rounded w-16" />
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-1.5 bg-gray-100 rounded w-full" />
+                              <div className="h-1.5 bg-gray-100 rounded w-4/5" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!isAnalyzing && rounds && rounds.length > 0 && (
+                      <div className="space-y-1.5">
+                        {rounds.map((round, i) => {
+                          const c = MODEL_COLOR[round.model] ?? MODEL_COLOR.GPT
+                          return (
+                            <div key={i} className={`rounded-lg p-2 border ${c.bg} ${c.border}`}>
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                                <span className={`text-[9px] font-bold ${c.text}`}>
+                                  {MODEL_EMOJI[round.model]} {round.model} — {round.role}
+                                </span>
+                                <span className={`text-[8px] px-1 py-0.5 rounded-full bg-white/60 ${c.text} ml-auto`}>
+                                  {round.perspective}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                                {round.content}
+                              </p>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {!isAnalyzing && !rounds && (
+                      <p className="text-[9px] text-gray-400 text-center py-1">
+                        GPT・Gemini・Claudeが異なる視点で分析します
+                      </p>
+                    )}
+                  </div>
+
                   <button onClick={() => handleDelete(note.id)}
                     className="text-[9px] text-red-400 hover:text-red-600 transition-colors">
                     🗑 削除する
