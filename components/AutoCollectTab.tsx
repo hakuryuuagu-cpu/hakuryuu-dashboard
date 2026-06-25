@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import type { ResearchNote, ResearchCategory } from '@/lib/types'
+import { supabase } from '@/lib/supabase'
 
 interface CollectItem {
   id: string
@@ -22,7 +23,6 @@ const DEFAULT_ITEMS: CollectItem[] = [
 ]
 
 const STORAGE_KEY = 'hakuryuu_collect_items'
-const NOTES_KEY = 'hakuryuu_research_notes'
 
 const CATEGORIES: ResearchCategory[] = ['競合調査', '市場調査', 'SNS・トレンド', 'AIの回答', 'その他']
 
@@ -48,18 +48,18 @@ export default function AutoCollectTab() {
     } catch {}
   }, [items])
 
-  const saveNote = (item: CollectItem, content: string) => {
+  const saveNote = async (item: CollectItem, content: string) => {
     try {
-      const notes: ResearchNote[] = JSON.parse(localStorage.getItem(NOTES_KEY) || '[]')
-      const note: ResearchNote = {
+      await supabase.from('research_notes').insert({
         id: `collect_${item.id}_${Date.now()}`,
         category: item.category,
         title: `【自動収集】${item.name} - ${new Date().toLocaleDateString('ja-JP')}`,
         content,
-        savedAt: new Date().toISOString(),
-      }
-      localStorage.setItem(NOTES_KEY, JSON.stringify([note, ...notes]))
-    } catch {}
+        saved_at: new Date().toISOString(),
+      })
+    } catch (e) {
+      console.error('Failed to save note:', e)
+    }
   }
 
   const collectOne = async (item: CollectItem): Promise<void> => {
@@ -72,7 +72,7 @@ export default function AutoCollectTab() {
       })
       const data = await res.json()
       if (data.content) {
-        saveNote(item, data.content)
+        await saveNote(item, data.content)
         const now = new Date().toISOString()
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, lastCollectedAt: now } : i))
         setDoneIds(prev => [...prev, item.id])

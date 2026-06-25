@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import type { ResearchNote, ResearchCategory } from '@/lib/types'
-
-const STORAGE_KEY = 'hakuryuu_research_notes'
+import { supabase } from '@/lib/supabase'
 
 const CATEGORIES: ResearchCategory[] = [
   '食べログ', 'Google評価', '競合調査', '市場調査', 'SNS・トレンド', 'AIの回答', 'その他'
@@ -20,6 +19,24 @@ const CATEGORY_STYLE: Record<ResearchCategory, { bg: string; text: string; emoji
 }
 
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
+
+// Supabaseのスネークケースと型のキャメルケースを変換
+function toNote(row: Record<string, unknown>): ResearchNote {
+  return {
+    id: row.id as string,
+    category: row.category as ResearchCategory,
+    title: row.title as string,
+    content: row.content as string,
+    source: row.source as string | undefined,
+    rating: row.rating as number | undefined,
+    savedAt: row.saved_at
+      ? new Date(row.saved_at as string).toLocaleString('ja-JP', {
+          year: 'numeric', month: 'numeric', day: 'numeric',
+          hour: '2-digit', minute: '2-digit'
+        })
+      : '',
+  }
+}
 
 interface AddNoteFormProps {
   onSave: (note: ResearchNote) => void
@@ -56,7 +73,6 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
     <div className="bg-white border border-indigo-200 rounded-xl p-3 space-y-2.5 shadow-sm">
       <p className="text-[10px] font-bold text-indigo-700">＋ 新しい調査メモ</p>
 
-      {/* Category */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">カテゴリ</label>
         <div className="flex flex-wrap gap-1">
@@ -76,7 +92,6 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
         </div>
       </div>
 
-      {/* Title */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">タイトル *</label>
         <input value={title} onChange={e => setTitle(e.target.value)}
@@ -84,7 +99,6 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
       </div>
 
-      {/* Rating (for tabelog/google) */}
       {showRating && (
         <div>
           <label className="text-[9px] font-bold text-gray-500 block mb-1">
@@ -97,7 +111,6 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
         </div>
       )}
 
-      {/* Content */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">内容 *</label>
         <textarea value={content} onChange={e => setContent(e.target.value)}
@@ -106,7 +119,6 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 resize-none" />
       </div>
 
-      {/* Source */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">
           情報源URL <span className="font-normal text-gray-400">（任意）</span>
@@ -141,20 +153,33 @@ interface Props {
 
 export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }: Props) {
   const [notes, setNotes]           = useState<ResearchNote[]>([])
+  const [loading, setLoading]       = useState(true)
   const [showForm, setShowForm]     = useState(false)
   const [filterCat, setFilterCat]   = useState<ResearchCategory | 'すべて'>('すべて')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [prefill, setPrefill]       = useState<Partial<ResearchNote> | undefined>()
 
-  // localStorageから読み込み
-  useEffect(() => {
+  // Supabaseからデータ読み込み
+  const loadNotes = async () => {
+    setLoading(true)
     try {
-      const stored = localStorage.getItem(STORAGE_KEY)
-      if (stored) setNotes(JSON.parse(stored))
-    } catch {}
-  }, [])
+      const { data, error } = await supabase
+        .from('research_notes')
+        .select('*')
+        .order('saved_at', { ascending: false })
+      if (!error && data) {
+        setNotes(data.map(toNote))
+      }
+    } catch (e) {
+      console.error('Failed to load notes:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  // 外部から渡されたメモ（QA保存など）を自動フォーム表示
+  useEffect(() => { loadNotes() }, [])
+
+  // 外部から渡されたメモを自動フォーム表示
   useEffect(() => {
     if (externalNote) {
       setPrefill(externalNote)
@@ -163,32 +188,49 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
     }
   }, [externalNote])
 
-  const saveToStorage = (updated: ResearchNote[]) => {
-    setNotes(updated)
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(updated)) } catch {}
+  const handleSave = async (note: ResearchNote) => {
+    try {
+      const { error } = await supabase.from('research_notes').insert({
+        id: note.id,
+        category: note.category,
+        title: note.title,
+        content: note.content,
+        source: note.source ?? null,
+        rating: note.rating ?? null,
+        saved_at: new Date().toISOString(),
+      })
+      if (!error) {
+        setNotes(prev => [note, ...prev])
+        setShowForm(false)
+        setPrefill(undefined)
+      }
+    } catch (e) {
+      console.error('Failed to save note:', e)
+    }
   }
 
-  const handleSave = (note: ResearchNote) => {
-    saveToStorage([note, ...notes])
-    setShowForm(false)
-    setPrefill(undefined)
-  }
-
-  const handleDelete = (id: string) => {
-    saveToStorage(notes.filter(n => n.id !== id))
-    if (expandedId === id) setExpandedId(null)
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase.from('research_notes').delete().eq('id', id)
+      if (!error) {
+        setNotes(prev => prev.filter(n => n.id !== id))
+        if (expandedId === id) setExpandedId(null)
+      }
+    } catch (e) {
+      console.error('Failed to delete note:', e)
+    }
   }
 
   const filtered = filterCat === 'すべて' ? notes : notes.filter(n => n.category === filterCat)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Header + add button */}
+      {/* Header */}
       <div className="flex-shrink-0 px-3 pt-2.5 pb-2 border-b border-gray-100 space-y-2">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-bold text-gray-700">📌 調査メモ</p>
-            <p className="text-[9px] text-gray-400">{notes.length}件保存済み</p>
+            <p className="text-[9px] text-gray-400">{notes.length}件 · 全端末で共有</p>
           </div>
           <button onClick={() => { setPrefill(undefined); setShowForm(v => !v) }}
             className={`text-[9px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${
@@ -213,7 +255,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
         </div>
       </div>
 
-      {/* Scrollable content */}
+      {/* Content */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {showForm && (
           <AddNoteForm
@@ -223,7 +265,13 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
           />
         )}
 
-        {filtered.length === 0 && !showForm && (
+        {loading && (
+          <div className="text-center py-6 text-gray-400">
+            <p className="text-xs">読み込み中...</p>
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && !showForm && (
           <div className="text-center py-8 text-gray-400">
             <div className="text-3xl mb-2 opacity-40">📌</div>
             <p className="text-xs leading-relaxed mb-1">まだメモがありません</p>
@@ -238,7 +286,6 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
           const isOpen = expandedId === note.id
           return (
             <div key={note.id} className="rounded-xl border border-gray-200 overflow-hidden fade-in">
-              {/* Note header */}
               <button
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
                 onClick={() => setExpandedId(isOpen ? null : note.id)}>
@@ -259,7 +306,6 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
                 </div>
               </button>
 
-              {/* Expanded content */}
               {isOpen && (
                 <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-2 fade-in">
                   <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{note.content}</p>
