@@ -115,3 +115,11 @@ export interface ResearchNote {
   rating?: number
   savedAt: string
 }
+
+export interface HumanMember {
+  id: string
+  name: string
+  role: string
+  color: string
+  emoji: string
+}

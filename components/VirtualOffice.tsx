@@ -8,7 +8,7 @@ import {
 import type {
   AIAgent, AIDeliberation, Task, TaskStatus, TaskTimeframe, TaskHistoryEntry,
   Philosophy, ActivityMessage, MinutesEntry, QAEntry, QAResponse,
-  DiscussionRound, QAInsights,
+  DiscussionRound, QAInsights, HumanMember,
 } from '@/lib/types'
 import PhilosophyBanner from './PhilosophyBanner'
 import TeamPanel from './TeamPanel'
@@ -30,6 +30,7 @@ export default function VirtualOffice() {
   const [activityMessages, setActivityMessages] = useState<ActivityMessage[]>([])
   const [minutes, setMinutes] = useState<MinutesEntry[]>([])
   const [qaEntries, setQaEntries] = useState<QAEntry[]>([])
+  const [humanMembers, setHumanMembers] = useState<HumanMember[]>([])
   const [showAddTask, setShowAddTask]   = useState(false)
   const [defaultTF, setDefaultTF]       = useState<TaskTimeframe>('week')
   const [showAddAgent, setShowAddAgent] = useState(false)
@@ -125,6 +126,14 @@ export default function VirtualOffice() {
 
   const handleDeleteTask = useCallback((taskId: string) => {
     setTasks(prev => prev.filter(t => t.id !== taskId))
+  }, [])
+
+  const handleAddHuman = useCallback((member: HumanMember) => {
+    setHumanMembers(prev => [...prev, member])
+  }, [])
+
+  const handleDeleteHuman = useCallback((id: string) => {
+    setHumanMembers(prev => prev.filter(m => m.id !== id))
   }, [])
 
   const handleAddAgent = useCallback((name: string, role: string, emoji: string, color: string) => {
@@ -258,13 +267,20 @@ export default function VirtualOffice() {
       <PhilosophyBanner philosophy={philosophy} />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <TeamPanel agents={agents} tasks={tasks} />
-        <TaskBoard
+        <TeamPanel
           agents={agents} tasks={tasks}
-          onAddTask={handleOpenAddTask}
-          onUpdateStatus={handleUpdateStatus}
-          onDeleteTask={handleDeleteTask}
+          humanMembers={humanMembers}
+          onAddHuman={handleAddHuman}
+          onDeleteHuman={handleDeleteHuman}
         />
+        <div className="flex-none w-[42%] flex flex-col min-h-0 overflow-hidden">
+          <TaskBoard
+            agents={agents} tasks={tasks}
+            onAddTask={handleOpenAddTask}
+            onUpdateStatus={handleUpdateStatus}
+            onDeleteTask={handleDeleteTask}
+          />
+        </div>
         <RightPanel
           agents={agents} messages={activityMessages}
           minutes={minutes} qaEntries={qaEntries}

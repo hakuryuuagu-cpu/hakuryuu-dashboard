@@ -140,7 +140,7 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
   }
 
   return (
-    <div className="w-72 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+    <div className="flex-1 min-w-[280px] bg-white border-l border-gray-200 flex flex-col overflow-hidden">
 
       {/* Tab bar — 5 tabs */}
       <div className="flex border-b border-gray-200 flex-shrink-0 bg-gray-50">
