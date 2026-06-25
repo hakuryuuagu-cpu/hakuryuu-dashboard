@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import type { AIAgent, ActivityMessage, MinutesEntry, QAEntry, DiscussionRound, QAInsights, ResearchNote } from '@/lib/types'
+import type { AIAgent, ActivityMessage, MinutesEntry, QAEntry, QAFollowup, DiscussionRound, QAInsights, ResearchNote, QAResponse } from '@/lib/types'
 import DailyRecordTab from './DailyRecordTab'
 import ResearchNoteTab from './ResearchNoteTab'
 import AutoCollectTab from './AutoCollectTab'
@@ -15,6 +15,8 @@ interface Props {
   minutes: MinutesEntry[]
   qaEntries: QAEntry[]
   onQASubmit: (topic: string) => void
+  onFollowupQA: (entryId: string, question: string) => void
+  onCloseQA: (entryId: string) => void
 }
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
@@ -98,11 +100,12 @@ function DiscussionView({ discussion, agents }: { discussion: DiscussionRound[];
   )
 }
 
-export default function RightPanel({ agents, messages, minutes, qaEntries, onQASubmit }: Props) {
+export default function RightPanel({ agents, messages, minutes, qaEntries, onQASubmit, onFollowupQA, onCloseQA }: Props) {
   const [tab, setTab]           = useState<TabKey>('activity')
   const [question, setQuestion] = useState('')
   const [qaViewMode, setQaViewMode] = useState<Record<string, QAViewMode>>({})
   const [expandedDelib, setExpandedDelib] = useState<Set<string>>(new Set())
+  const [followupTexts, setFollowupTexts] = useState<Record<string, string>>({})
   // 調査メモタブへ渡す外部保存データ
   const [pendingResearch, setPendingResearch] = useState<Partial<ResearchNote> | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -347,6 +350,96 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
 
                   {/* Insights */}
                   {hasInsights && <InsightsPanel insights={entry.insights!} />}
+
+                  {/* フォローアップ履歴 */}
+                  {(entry.followups ?? []).map((f: QAFollowup, fi: number) => (
+                    <div key={f.id} className="border-t border-indigo-100">
+                      <div className="bg-indigo-500 px-3 py-1.5">
+                        <p className="text-[9px] text-indigo-200 mb-0.5">↩ フォローアップ {fi + 1}</p>
+                        <p className="text-white text-[10px] font-bold leading-snug">{f.question}</p>
+                      </div>
+                      <div className="bg-gray-50 p-2 space-y-1.5">
+                        {f.responses.length === 0 && (
+                          <div className="flex items-center gap-2 py-2 px-1">
+                            <div className="flex gap-1">
+                              {[0,1,2].map(i => (
+                                <div key={i} className="w-1.5 h-1.5 bg-indigo-300 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+                              ))}
+                            </div>
+                            <span className="text-[10px] text-gray-400">AIが考えています…</span>
+                          </div>
+                        )}
+                        {f.responses.map((r: QAResponse) => (
+                          <div key={r.agentId}
+                            className={`rounded-lg p-2 fade-in ${r.isAudit ? 'bg-red-50 border border-red-100' : 'bg-white border border-gray-100'}`}>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0"
+                                style={{ backgroundColor: r.agentColor }}>
+                                {r.agentInitials}
+                              </div>
+                              <span className="text-[10px] font-bold" style={{ color: r.agentColor }}>{r.agentName}</span>
+                              {r.isAudit && <span className="text-[8px] bg-red-100 text-red-600 px-1.5 rounded-full ml-auto font-bold">監査</span>}
+                            </div>
+                            <p className="text-[10px] text-gray-700 leading-relaxed">{r.content}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* フォローアップ入力プロンプト */}
+                  {entry.awaitingFollowup && !entry.closed && (
+                    <div className="border-t border-indigo-200 bg-indigo-50 px-3 py-3">
+                      <p className="text-[10px] font-bold text-indigo-700 mb-2">
+                        💬 他に質問や意見はありますか？
+                      </p>
+                      <textarea
+                        value={followupTexts[entry.id] ?? ''}
+                        onChange={e => setFollowupTexts(prev => ({ ...prev, [entry.id]: e.target.value }))}
+                        placeholder="追加の質問や意見を入力…"
+                        rows={2}
+                        className="w-full border border-indigo-200 rounded-lg px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            const q = followupTexts[entry.id]?.trim()
+                            if (!q) return
+                            onFollowupQA(entry.id, q)
+                            setFollowupTexts(prev => ({ ...prev, [entry.id]: '' }))
+                          }
+                        }}
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => onCloseQA(entry.id)}
+                          className="flex-1 py-1.5 text-[10px] font-bold border border-gray-300 text-gray-500 rounded-lg hover:bg-gray-100 transition-colors">
+                          いいえ、終わり
+                        </button>
+                        <button
+                          onClick={() => {
+                            const q = followupTexts[entry.id]?.trim()
+                            if (!q) return
+                            onFollowupQA(entry.id, q)
+                            setFollowupTexts(prev => ({ ...prev, [entry.id]: '' }))
+                          }}
+                          disabled={!(followupTexts[entry.id]?.trim())}
+                          className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-colors ${
+                            followupTexts[entry.id]?.trim()
+                              ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          }`}>
+                          はい、送信 →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 討論終了 */}
+                  {entry.closed && (
+                    <div className="py-2 text-center border-t border-gray-100">
+                      <span className="text-[9px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full">✅ 討論終了</span>
+                    </div>
+                  )}
                 </div>
               )
             })}

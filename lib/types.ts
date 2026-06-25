@@ -97,6 +97,13 @@ export interface QAResponse {
   deliberation?: AIDeliberation[]
 }
 
+export interface QAFollowup {
+  id: string
+  question: string
+  responses: QAResponse[]
+  createdAt: Date
+}
+
 export interface QAEntry {
   id: string
   topic: string
@@ -104,6 +111,9 @@ export interface QAEntry {
   discussion?: DiscussionRound[]
   insights?: QAInsights
   createdAt: Date
+  followups?: QAFollowup[]
+  awaitingFollowup?: boolean
+  closed?: boolean
 }
 
 export type ResearchCategory = '食べログ' | 'Google評価' | '競合調査' | '市場調査' | 'SNS・トレンド' | 'AIの回答' | 'その他'

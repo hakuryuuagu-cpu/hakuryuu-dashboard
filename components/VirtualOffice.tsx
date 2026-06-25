@@ -7,7 +7,7 @@ import {
 } from '@/lib/constants'
 import type {
   AIAgent, AIDeliberation, Task, TaskStatus, TaskTimeframe, TaskHistoryEntry,
-  Philosophy, ActivityMessage, MinutesEntry, QAEntry, QAResponse,
+  Philosophy, ActivityMessage, MinutesEntry, QAEntry, QAResponse, QAFollowup,
   DiscussionRound, QAInsights, HumanMember,
 } from '@/lib/types'
 import PhilosophyBanner from './PhilosophyBanner'
@@ -37,8 +37,10 @@ export default function VirtualOffice() {
   const [showEditPhil, setShowEditPhil] = useState(false)
   const [pendingComplete, setPendingComplete] = useState<{ taskId: string; taskTitle: string } | null>(null)
 
-  const agentsRef   = useRef(agents)
-  agentsRef.current = agents
+  const agentsRef      = useRef(agents)
+  agentsRef.current    = agents
+  const qaEntriesRef   = useRef(qaEntries)
+  qaEntriesRef.current = qaEntries
   const msgIdxRef   = useRef(0)
   const minBufRef   = useRef<ActivityMessage[]>([])
 
@@ -186,11 +188,13 @@ export default function VirtualOffice() {
     setShowAddAgent(false)
   }, [])
 
-  const handleQASubmit = useCallback((topic: string) => {
-    const entry: QAEntry = { id: uid(), topic, responses: [], createdAt: new Date() }
-    setQaEntries(prev => [entry, ...prev])
-    const currentAgents = agentsRef.current
-
+  // QAでAPIを呼んで回答を追加するヘルパー
+  const fetchQAResponses = useCallback((
+    topic: string,
+    currentAgents: typeof agents,
+    onResponse: (r: QAResponse, i: number) => void,
+    onDone: () => void,
+  ) => {
     ;(async () => {
       try {
         const res = await fetch('/api/chat', {
@@ -204,30 +208,21 @@ export default function VirtualOffice() {
           }),
         })
         const data = await res.json()
-
         if (res.ok && Array.isArray(data.responses)) {
-          setQaEntries(prev => prev.map(e => e.id === entry.id ? {
-            ...e,
-            discussion: (data.discussion ?? []) as DiscussionRound[],
-            insights: data.insights as QAInsights | undefined,
-          } : e))
-
           data.responses.forEach((r: { agentId: string; content: string; deliberation?: { model: string; text: string }[] }, i: number) => {
             const agent = currentAgents.find(a => a.id === r.agentId)
             if (!agent) return
             setTimeout(() => {
-              const response: QAResponse = {
+              onResponse({
                 agentId: agent.id, agentName: agent.name,
                 agentColor: agent.color, agentInitials: agent.initials,
                 content: r.content, type: agent.isAudit ? 'risk' : 'opinion',
                 isAudit: agent.isAudit,
                 deliberation: r.deliberation as AIDeliberation[] | undefined,
-              }
-              setQaEntries(prev =>
-                prev.map(e => e.id === entry.id ? { ...e, responses: [...e.responses, response] } : e)
-              )
+              }, i)
             }, i * 500)
           })
+          setTimeout(onDone, data.responses.length * 500 + 800)
         } else {
           throw new Error(data.error ?? 'エラー')
         }
@@ -236,18 +231,86 @@ export default function VirtualOffice() {
           setTimeout(() => {
             const templates = QA_TEMPLATES[agent.id] ?? QA_TEMPLATES._default ?? []
             const content = pickRandom(templates).replace(/\{topic\}/g, topic)
-            const response: QAResponse = {
+            onResponse({
               agentId: agent.id, agentName: agent.name,
               agentColor: agent.color, agentInitials: agent.initials,
               content, type: agent.isAudit ? 'risk' : 'opinion', isAudit: agent.isAudit,
-            }
-            setQaEntries(prev =>
-              prev.map(e => e.id === entry.id ? { ...e, responses: [...e.responses, response] } : e)
-            )
+            }, i)
           }, i * 400)
         })
+        setTimeout(onDone, currentAgents.length * 400 + 800)
       }
     })()
+  }, [])
+
+  const handleQASubmit = useCallback((topic: string) => {
+    const entry: QAEntry = { id: uid(), topic, responses: [], followups: [], awaitingFollowup: false, closed: false, createdAt: new Date() }
+    setQaEntries(prev => [entry, ...prev])
+    const currentAgents = agentsRef.current
+
+    fetchQAResponses(
+      topic,
+      currentAgents,
+      (response) => {
+        setQaEntries(prev =>
+          prev.map(e => e.id === entry.id ? { ...e, responses: [...e.responses, response] } : e)
+        )
+      },
+      () => {
+        setQaEntries(prev =>
+          prev.map(e => e.id === entry.id ? { ...e, awaitingFollowup: true } : e)
+        )
+      },
+    )
+  }, [fetchQAResponses])
+
+  const handleFollowupQA = useCallback((entryId: string, followupQuestion: string) => {
+    const followupId = uid()
+    const followup: QAFollowup = { id: followupId, question: followupQuestion, responses: [], createdAt: new Date() }
+    setQaEntries(prev => prev.map(e =>
+      e.id !== entryId ? e : { ...e, awaitingFollowup: false, followups: [...(e.followups ?? []), followup] }
+    ))
+
+    // 会話履歴をコンテキストとしてAPIに渡す
+    const entry = qaEntriesRef.current.find(e => e.id === entryId)
+    const currentAgents = agentsRef.current
+    const history = entry ? [
+      `元のトピック: ${entry.topic}`,
+      ...entry.responses.map(r => `${r.agentName}: ${r.content}`),
+      ...(entry.followups ?? []).flatMap(f => [
+        `\nフォローアップ: ${f.question}`,
+        ...f.responses.map(r => `${r.agentName}: ${r.content}`),
+      ]),
+    ].join('\n') : `元のトピック: フォローアップ`
+
+    const contextualTopic = `${history}\n\n--- 新しい質問 ---\n${followupQuestion}`
+
+    fetchQAResponses(
+      contextualTopic,
+      currentAgents,
+      (response) => {
+        setQaEntries(prev => prev.map(e => {
+          if (e.id !== entryId) return e
+          return {
+            ...e,
+            followups: (e.followups ?? []).map(f =>
+              f.id === followupId ? { ...f, responses: [...f.responses, response] } : f
+            ),
+          }
+        }))
+      },
+      () => {
+        setQaEntries(prev =>
+          prev.map(e => e.id === entryId ? { ...e, awaitingFollowup: true } : e)
+        )
+      },
+    )
+  }, [fetchQAResponses])
+
+  const handleCloseQA = useCallback((entryId: string) => {
+    setQaEntries(prev => prev.map(e =>
+      e.id === entryId ? { ...e, awaitingFollowup: false, closed: true } : e
+    ))
   }, [])
 
   const total  = tasks.length
@@ -325,6 +388,8 @@ export default function VirtualOffice() {
           agents={agents} messages={activityMessages}
           minutes={minutes} qaEntries={qaEntries}
           onQASubmit={handleQASubmit}
+          onFollowupQA={handleFollowupQA}
+          onCloseQA={handleCloseQA}
         />
       </div>
 
