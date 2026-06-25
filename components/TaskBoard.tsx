@@ -42,20 +42,17 @@ export default function TaskBoard({ agents, tasks, onAddTask, onUpdateStatus, on
   const nextStatus = (cur: TaskStatus): TaskStatus =>
     STATUSES[(STATUSES.indexOf(cur) + 1) % STATUSES.length]
 
-  return (
-    <>
-      <div className="flex-1 flex gap-3 p-4 overflow-hidden min-w-0">
-        {TIMEFRAMES.map(tf => {
-          const col  = tasks.filter(t => t.timeframe === tf.key)
-          const done = col.filter(t => t.status === '完了').length
-          const pct  = col.length > 0 ? Math.round((done / col.length) * 100) : 0
+  const renderColumn = (tf: typeof TIMEFRAMES[number], compact = false) => {
+    const col  = tasks.filter(t => t.timeframe === tf.key)
+    const done = col.filter(t => t.status === '完了').length
+    const pct  = col.length > 0 ? Math.round((done / col.length) * 100) : 0
 
-          return (
-            <div key={tf.key}
-              className={`flex-1 flex flex-col rounded-2xl border ${tf.border} overflow-hidden shadow-sm min-w-0`}>
+    return (
+      <div key={tf.key}
+        className={`flex flex-col rounded-2xl border ${tf.border} overflow-hidden shadow-sm min-w-0 ${compact ? 'min-h-0' : 'flex-1'}`}>
 
               {/* Column header */}
-              <div className={`${tf.hdr} px-4 py-3 flex items-center gap-2 flex-shrink-0`}>
+              <div className={`${tf.hdr} ${compact ? 'px-3 py-2' : 'px-4 py-3'} flex items-center gap-2 flex-shrink-0`}>
                 <span className="text-xl">{tf.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-white font-bold text-sm leading-tight">{tf.label}</h3>
@@ -183,8 +180,20 @@ export default function TaskBoard({ agents, tasks, onAddTask, onUpdateStatus, on
                 </button>
               </div>
             </div>
-          )
-        })}
+    )
+  }
+
+  return (
+    <>
+      <div className="flex-1 flex gap-3 p-4 overflow-hidden min-w-0">
+        {/* 今週: フル高さ */}
+        {renderColumn(TIMEFRAMES[0])}
+
+        {/* 今月 + 今年: 縦に半分ずつ */}
+        <div className="flex flex-col gap-3 flex-1 min-w-0 overflow-hidden">
+          {renderColumn(TIMEFRAMES[1], true)}
+          {renderColumn(TIMEFRAMES[2], true)}
+        </div>
       </div>
 
       {/* Task detail modal */}

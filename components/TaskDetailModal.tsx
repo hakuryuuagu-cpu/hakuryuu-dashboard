@@ -1,6 +1,14 @@
 'use client'
 
+import { useState } from 'react'
 import type { AIAgent, Task, TaskStatus } from '@/lib/types'
+
+interface AnalysisRound {
+  model: 'GPT' | 'Gemini' | 'Claude'
+  role: string
+  perspective: string
+  content: string
+}
 
 interface Props {
   task: Task
@@ -33,15 +41,52 @@ const STATUS_ARROW: Record<TaskStatus, string> = {
   '未着手': '⚪', '進行中': '🔵', '完了': '✅', '保留': '🟡',
 }
 
+const MODEL_COLOR: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  GPT:    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
+  Gemini: { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
+  Claude: { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',  dot: 'bg-orange-500'  },
+}
+
+const MODEL_EMOJI: Record<string, string> = {
+  GPT: '🟢', Gemini: '🔵', Claude: '🟠',
+}
+
 export default function TaskDetailModal({ task, agents, onUpdateStatus, onDelete, onClose }: Props) {
   const agent = agents.find(a => a.id === task.assigneeId)
+  const [analysis, setAnalysis]   = useState<AnalysisRound[]>([])
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzed, setAnalyzed]   = useState(false)
+
+  const runAnalysis = async () => {
+    setAnalyzing(true)
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: task.title,
+          content: task.description || `ステータス: ${task.status}、優先度: ${task.priority}`,
+          type: 'task',
+        }),
+      })
+      const data = await res.json()
+      if (data.rounds) {
+        setAnalysis(data.rounds)
+        setAnalyzed(true)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in"
       onClick={onClose}>
       <div
-        className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden fade-in max-h-[90vh] flex flex-col"
+        className="bg-white rounded-3xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden fade-in max-h-[92vh] flex flex-col"
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -129,6 +174,88 @@ export default function TaskDetailModal({ task, agents, onUpdateStatus, onDelete
               </div>
             )}
 
+            {/* AI Analysis section */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">🤖 AIマルチ分析</p>
+                {!analyzed && (
+                  <button
+                    onClick={runAnalysis}
+                    disabled={analyzing}
+                    className="text-[10px] font-bold px-3 py-1.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                  >
+                    {analyzing ? (
+                      <>
+                        <span className="animate-pulse">●</span> 分析中...
+                      </>
+                    ) : '▶ 全AIで多角分析'}
+                  </button>
+                )}
+                {analyzed && (
+                  <button
+                    onClick={runAnalysis}
+                    disabled={analyzing}
+                    className="text-[10px] text-gray-400 hover:text-indigo-600 transition-colors"
+                  >
+                    🔄 再分析
+                  </button>
+                )}
+              </div>
+
+              {analysis.length === 0 && !analyzing && (
+                <div className="bg-gray-50 rounded-xl p-4 text-center">
+                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                    このタスクについて、GPT・Gemini・Claudeが<br />
+                    それぞれ異なる視点から分析します
+                  </p>
+                  <p className="text-[10px] text-gray-300 mt-1">
+                    📊 市場分析 / ⚠️ リスク / ✅ アクション提案
+                  </p>
+                </div>
+              )}
+
+              {analyzing && (
+                <div className="space-y-2">
+                  {['GPT', 'Gemini', 'Claude'].map(m => (
+                    <div key={m} className="bg-gray-50 rounded-xl p-3 animate-pulse">
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-2 h-2 rounded-full bg-gray-300" />
+                        <div className="h-2.5 bg-gray-200 rounded w-16" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 bg-gray-200 rounded w-full" />
+                        <div className="h-2 bg-gray-200 rounded w-4/5" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {analysis.length > 0 && (
+                <div className="space-y-2.5">
+                  {analysis.map((round, i) => {
+                    const c = MODEL_COLOR[round.model] ?? MODEL_COLOR.GPT
+                    return (
+                      <div key={i} className={`rounded-xl p-3 border ${c.bg} ${c.border}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className={`w-2 h-2 rounded-full ${c.dot}`} />
+                          <span className={`text-[10px] font-bold ${c.text}`}>
+                            {MODEL_EMOJI[round.model]} {round.model} — {round.role}
+                          </span>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded-full bg-white/60 ${c.text} ml-auto`}>
+                            {round.perspective}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          {round.content}
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Change history */}
             {task.history && task.history.length > 0 && (
               <div>
@@ -136,7 +263,7 @@ export default function TaskDetailModal({ task, agents, onUpdateStatus, onDelete
                   🕐 変更履歴 <span className="text-gray-400 font-normal normal-case">({task.history.length}件)</span>
                 </p>
                 <div className="space-y-2">
-                  {[...task.history].reverse().map((h, i) => (
+                  {[...task.history].reverse().map((h) => (
                     <div key={h.id} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[9px] text-gray-400">{h.date}</span>
