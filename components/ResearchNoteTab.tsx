@@ -43,7 +43,7 @@ function toNote(row: Record<string, unknown>): ResearchNote {
     title: row.title as string,
     content: row.content as string,
     source: row.source as string | undefined,
-    rating: row.rating as number | undefined,
+    rating: row.rating != null ? (row.rating as number) : undefined,
     savedAt: row.saved_at
       ? new Date(row.saved_at as string).toLocaleString('ja-JP', {
           year: 'numeric', month: 'numeric', day: 'numeric',
