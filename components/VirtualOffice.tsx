@@ -81,10 +81,50 @@ export default function VirtualOffice() {
     setDefaultTF(tf); setShowAddTask(true)
   }, [])
 
+  const triggerTaskDiscussion = useCallback(async (task: Omit<Task, 'id' | 'createdAt'>) => {
+    const currentAgents = agentsRef.current
+    try {
+      const res = await fetch('/api/task-discuss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task: { title: task.title, description: task.description, category: task.category },
+          agents: currentAgents.map(a => ({
+            id: a.id, name: a.name, role: a.role, specialties: a.specialties, isAudit: !!a.isAudit,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (Array.isArray(data.messages) && data.messages.length > 0) {
+        data.messages.forEach((m: { agentId: string; agentName: string; content: string }, i: number) => {
+          setTimeout(() => {
+            const agent = currentAgents.find(a => a.id === m.agentId)
+            const msg: ActivityMessage = {
+              id: uid(),
+              agentId: m.agentId,
+              agentName: m.agentName,
+              agentColor: agent?.color ?? '#94a3b8',
+              agentInitials: agent?.initials ?? m.agentName.slice(0, 1),
+              content: m.content,
+              timestamp: new Date(),
+              isAudit: agent?.isAudit,
+              taskTitle: task.title,
+              isTaskDiscussion: true,
+            }
+            setActivityMessages(prev => [...prev.slice(-80), msg])
+          }, i * 1500)
+        })
+      }
+    } catch (e) {
+      console.error('Task discussion failed:', e)
+    }
+  }, [])
+
   const handleAddTask = useCallback((task: Omit<Task, 'id' | 'createdAt'>) => {
     setTasks(prev => [...prev, { ...task, id: uid(), createdAt: new Date() }])
     setShowAddTask(false)
-  }, [])
+    triggerTaskDiscussion(task)
+  }, [triggerTaskDiscussion])
 
   const handleUpdateStatus = useCallback((taskId: string, status: TaskStatus) => {
     if (status === '完了') {

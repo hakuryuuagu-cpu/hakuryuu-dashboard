@@ -54,6 +54,8 @@ export interface ActivityMessage {
   content: string
   timestamp: Date
   isAudit?: boolean
+  taskTitle?: string      // タスク討論起源のメッセージ
+  isTaskDiscussion?: boolean
 }
 
 export interface MinutesEntry {

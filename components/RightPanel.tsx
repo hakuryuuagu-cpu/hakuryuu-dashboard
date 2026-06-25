@@ -167,25 +167,45 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
             </div>
           ) : (
             <div className="p-3 space-y-1.5">
-              {messages.map(msg => (
-                <div key={msg.id}
-                  className={`flex gap-2 items-start rounded-xl p-2 fade-in ${msg.isAudit ? 'bg-red-50 border border-red-100' : 'hover:bg-gray-50'}`}>
-                  <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 mt-0.5 shadow-sm"
-                    style={{ backgroundColor: msg.agentColor }}>
-                    {msg.agentInitials}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <span className="text-[10px] font-bold" style={{ color: msg.agentColor }}>{msg.agentName}</span>
-                      {msg.isAudit && <span className="text-[8px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">監査</span>}
-                      <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
-                        {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+              {messages.map((msg, i) => {
+                // タスク討論の最初のメッセージにはタスク名バッジを表示
+                const showTaskBadge = msg.isTaskDiscussion && msg.taskTitle &&
+                  (i === 0 || !messages[i - 1].isTaskDiscussion || messages[i - 1].taskTitle !== msg.taskTitle)
+                return (
+                  <div key={msg.id} className="fade-in">
+                    {showTaskBadge && (
+                      <div className="flex items-center gap-2 my-2 px-1">
+                        <div className="h-px flex-1 bg-indigo-100" />
+                        <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full border border-indigo-100 whitespace-nowrap">
+                          📋 タスク討論: {msg.taskTitle}
+                        </span>
+                        <div className="h-px flex-1 bg-indigo-100" />
+                      </div>
+                    )}
+                    <div className={`flex gap-2 items-start rounded-xl p-2 ${
+                      msg.isTaskDiscussion
+                        ? msg.isAudit ? 'bg-red-50 border border-red-100' : 'bg-indigo-50/40 border border-indigo-100'
+                        : msg.isAudit ? 'bg-red-50 border border-red-100' : 'hover:bg-gray-50'
+                    }`}>
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 mt-0.5 shadow-sm"
+                        style={{ backgroundColor: msg.agentColor }}>
+                        {msg.agentInitials}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1 mb-0.5">
+                          <span className="text-[10px] font-bold" style={{ color: msg.agentColor }}>{msg.agentName}</span>
+                          {msg.isAudit && <span className="text-[8px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-bold">監査</span>}
+                          {msg.isTaskDiscussion && !msg.isAudit && <span className="text-[8px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full font-bold">討論</span>}
+                          <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
+                            {msg.timestamp.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-700 leading-relaxed">{msg.content}</p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-gray-700 leading-relaxed">{msg.content}</p>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <div ref={bottomRef} />
             </div>
           )}
