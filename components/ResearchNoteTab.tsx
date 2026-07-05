@@ -1,23 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import type { ResearchNote, ResearchCategory } from '@/lib/types'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import type { ResearchNote, ResearchCategory } from '@/lib/types'
 
-interface AnalysisRound {
-  model: 'GPT' | 'Gemini' | 'Claude'
-  role: string
-  perspective: string
-  content: string
-}
-
-const MODEL_COLOR: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-  GPT:    { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', dot: 'bg-emerald-500' },
-  Gemini: { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200',    dot: 'bg-blue-500'    },
-  Claude: { bg: 'bg-orange-50',  text: 'text-orange-700',  border: 'border-orange-200',  dot: 'bg-orange-500'  },
-}
-
-const MODEL_EMOJI: Record<string, string> = { GPT: '🟢', Gemini: '🔵', Claude: '🟠' }
+const STORAGE_KEY = 'hakuryuu_research_notes'
 
 const CATEGORIES: ResearchCategory[] = [
   '食べログ', 'Google評価', '競合調査', '市場調査', 'SNS・トレンド', 'AIの回答', 'その他'
@@ -34,24 +21,6 @@ const CATEGORY_STYLE: Record<ResearchCategory, { bg: string; text: string; emoji
 }
 
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
-
-// Supabaseのスネークケースと型のキャメルケースを変換
-function toNote(row: Record<string, unknown>): ResearchNote {
-  return {
-    id: row.id as string,
-    category: row.category as ResearchCategory,
-    title: row.title as string,
-    content: row.content as string,
-    source: row.source as string | undefined,
-    rating: row.rating != null ? (row.rating as number) : undefined,
-    savedAt: row.saved_at
-      ? new Date(row.saved_at as string).toLocaleString('ja-JP', {
-          year: 'numeric', month: 'numeric', day: 'numeric',
-          hour: '2-digit', minute: '2-digit'
-        })
-      : '',
-  }
-}
 
 interface AddNoteFormProps {
   onSave: (note: ResearchNote) => void
@@ -88,6 +57,7 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
     <div className="bg-white border border-indigo-200 rounded-xl p-3 space-y-2.5 shadow-sm">
       <p className="text-[10px] font-bold text-indigo-700">＋ 新しい調査メモ</p>
 
+      {/* Category */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">カテゴリ</label>
         <div className="flex flex-wrap gap-1">
@@ -107,6 +77,7 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
         </div>
       </div>
 
+      {/* Title */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">タイトル *</label>
         <input value={title} onChange={e => setTitle(e.target.value)}
@@ -114,6 +85,7 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300" />
       </div>
 
+      {/* Rating (for tabelog/google) */}
       {showRating && (
         <div>
           <label className="text-[9px] font-bold text-gray-500 block mb-1">
@@ -126,6 +98,7 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
         </div>
       )}
 
+      {/* Content */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">内容 *</label>
         <textarea value={content} onChange={e => setContent(e.target.value)}
@@ -134,6 +107,7 @@ function AddNoteForm({ onSave, onCancel, prefill }: AddNoteFormProps) {
           className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-300 resize-none" />
       </div>
 
+      {/* Source */}
       <div>
         <label className="text-[9px] font-bold text-gray-500 block mb-1">
           情報源URL <span className="font-normal text-gray-400">（任意）</span>
@@ -167,36 +141,56 @@ interface Props {
 }
 
 export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }: Props) {
-  const [notes, setNotes]             = useState<ResearchNote[]>([])
-  const [loading, setLoading]         = useState(true)
-  const [showForm, setShowForm]       = useState(false)
-  const [filterCat, setFilterCat]     = useState<ResearchCategory | 'すべて'>('すべて')
-  const [expandedId, setExpandedId]   = useState<string | null>(null)
-  const [prefill, setPrefill]         = useState<Partial<ResearchNote> | undefined>()
-  const [analysisMap, setAnalysisMap] = useState<Record<string, AnalysisRound[]>>({})
-  const [analyzingId, setAnalyzingId] = useState<string | null>(null)
+  const [notes, setNotes]           = useState<ResearchNote[]>([])
+  const [showForm, setShowForm]     = useState(false)
+  const [filterCat, setFilterCat]   = useState<ResearchCategory | 'すべて'>('すべて')
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [prefill, setPrefill]       = useState<Partial<ResearchNote> | undefined>()
+  const [loading, setLoading]       = useState(true)
+  const [saveMode, setSaveMode]     = useState<'supabase' | 'local'>('local')
+  const initDone = useRef(false)
 
-  // Supabaseからデータ読み込み
-  const loadNotes = async () => {
-    setLoading(true)
-    try {
-      const { data, error } = await supabase
-        .from('research_notes')
-        .select('*')
-        .order('saved_at', { ascending: false })
-      if (!error && data) {
-        setNotes(data.map(toNote))
+  // 起動時: Supabaseが使えるなら読み込み、なければlocalStorage
+  useEffect(() => {
+    if (initDone.current) return
+    initDone.current = true
+
+    const loadNotes = async () => {
+      if (supabase) {
+        setSaveMode('supabase')
+        try {
+          const { data, error } = await supabase
+            .from('research_notes')
+            .select('*')
+            .order('saved_at', { ascending: false })
+          if (!error && data) {
+            setNotes(data.map((row: Record<string, unknown>) => ({
+              id: row.id as string,
+              category: row.category as ResearchNote['category'],
+              title: row.title as string,
+              content: row.content as string,
+              source: row.source as string | undefined,
+              rating: row.rating != null ? (row.rating as number) : undefined,
+              savedAt: row.saved_at as string,
+            })))
+            setLoading(false)
+            return
+          }
+        } catch {}
       }
-    } catch (e) {
-      console.error('Failed to load notes:', e)
-    } finally {
+      // fallback: localStorage
+      setSaveMode('local')
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY)
+        if (stored) setNotes(JSON.parse(stored))
+      } catch {}
       setLoading(false)
     }
-  }
 
-  useEffect(() => { loadNotes() }, [])
+    loadNotes()
+  }, [])
 
-  // 外部から渡されたメモを自動フォーム表示
+  // 外部から渡されたメモ（QA保存など）を自動フォーム表示
   useEffect(() => {
     if (externalNote) {
       setPrefill(externalNote)
@@ -206,67 +200,65 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
   }, [externalNote])
 
   const handleSave = async (note: ResearchNote) => {
-    try {
-      const { error } = await supabase.from('research_notes').insert({
-        id: note.id,
-        category: note.category,
-        title: note.title,
-        content: note.content,
-        source: note.source ?? null,
-        rating: note.rating ?? null,
-        saved_at: new Date().toISOString(),
-      })
-      if (!error) {
-        setNotes(prev => [note, ...prev])
-        setShowForm(false)
-        setPrefill(undefined)
+    if (supabase && saveMode === 'supabase') {
+      try {
+        await supabase.from('research_notes').upsert({
+          id: note.id,
+          category: note.category,
+          title: note.title,
+          content: note.content,
+          source: note.source ?? null,
+          rating: note.rating ?? null,
+          saved_at: new Date().toISOString(),
+        })
+      } catch (e) {
+        console.error('Supabase save error:', e)
       }
-    } catch (e) {
-      console.error('Failed to save note:', e)
+    } else {
+      try {
+        const updated = [note, ...notes]
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      } catch {}
     }
+    setNotes(prev => [note, ...prev.filter(n => n.id !== note.id)])
+    setShowForm(false)
+    setPrefill(undefined)
   }
 
   const handleDelete = async (id: string) => {
-    try {
-      const { error } = await supabase.from('research_notes').delete().eq('id', id)
-      if (!error) {
-        setNotes(prev => prev.filter(n => n.id !== id))
-        if (expandedId === id) setExpandedId(null)
-      }
-    } catch (e) {
-      console.error('Failed to delete note:', e)
+    if (supabase && saveMode === 'supabase') {
+      try { await supabase.from('research_notes').delete().eq('id', id) } catch {}
+    } else {
+      try {
+        const updated = notes.filter(n => n.id !== id)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
+      } catch {}
     }
-  }
-
-  const runAnalysis = async (note: ResearchNote) => {
-    setAnalyzingId(note.id)
-    try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: note.title, content: note.content, type: 'research' }),
-      })
-      const data = await res.json()
-      if (data.rounds) {
-        setAnalysisMap(prev => ({ ...prev, [note.id]: data.rounds }))
-      }
-    } catch (e) {
-      console.error('Analysis failed:', e)
-    } finally {
-      setAnalyzingId(null)
-    }
+    setNotes(prev => prev.filter(n => n.id !== id))
+    if (expandedId === id) setExpandedId(null)
   }
 
   const filtered = filterCat === 'すべて' ? notes : notes.filter(n => n.category === filterCat)
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Header */}
+      {/* Header + add button */}
       <div className="flex-shrink-0 px-3 pt-2.5 pb-2 border-b border-gray-100 space-y-2">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-bold text-gray-700">📌 調査メモ</p>
-            <p className="text-[9px] text-gray-400">{notes.length}件 · 全端末で共有</p>
+            <p className="text-[9px] text-gray-400">
+              {loading ? '読み込み中…' : `${notes.length}件保存済み`}
+              {!loading && (
+                <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[8px] font-bold ${
+                  saveMode === 'supabase'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  {saveMode === 'supabase' ? '☁️ クラウド保存' : '💾 ローカル保存'}
+                </span>
+              )}
+            </p>
           </div>
           <button onClick={() => { setPrefill(undefined); setShowForm(v => !v) }}
             className={`text-[9px] font-bold px-2.5 py-1.5 rounded-lg transition-colors ${
@@ -291,7 +283,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
         </div>
       </div>
 
-      {/* Content */}
+      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {showForm && (
           <AddNoteForm
@@ -301,13 +293,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
           />
         )}
 
-        {loading && (
-          <div className="text-center py-6 text-gray-400">
-            <p className="text-xs">読み込み中...</p>
-          </div>
-        )}
-
-        {!loading && filtered.length === 0 && !showForm && (
+        {filtered.length === 0 && !showForm && (
           <div className="text-center py-8 text-gray-400">
             <div className="text-3xl mb-2 opacity-40">📌</div>
             <p className="text-xs leading-relaxed mb-1">まだメモがありません</p>
@@ -320,11 +306,9 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
         {filtered.map(note => {
           const s = CATEGORY_STYLE[note.category]
           const isOpen = expandedId === note.id
-          const rounds = analysisMap[note.id]
-          const isAnalyzing = analyzingId === note.id
-
           return (
             <div key={note.id} className="rounded-xl border border-gray-200 overflow-hidden fade-in">
+              {/* Note header */}
               <button
                 className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
                 onClick={() => setExpandedId(isOpen ? null : note.id)}>
@@ -345,9 +329,9 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
                 </div>
               </button>
 
+              {/* Expanded content */}
               {isOpen && (
-                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-2.5 fade-in">
-                  {/* Note body */}
+                <div className="border-t border-gray-100 px-3 py-2 bg-gray-50 space-y-2 fade-in">
                   <p className="text-[11px] text-gray-700 leading-relaxed whitespace-pre-wrap">{note.content}</p>
                   {note.source && (
                     <a href={note.source} target="_blank" rel="noopener noreferrer"
@@ -355,76 +339,6 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
                       🔗 {note.source}
                     </a>
                   )}
-
-                  {/* AI Analysis */}
-                  <div className="pt-1.5 border-t border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-[9px] font-bold text-gray-500">🤖 AIマルチ分析</p>
-                      <button
-                        onClick={() => runAnalysis(note)}
-                        disabled={isAnalyzing}
-                        className={`text-[9px] font-bold px-2 py-1 rounded-lg transition-colors flex items-center gap-1 ${
-                          isAnalyzing
-                            ? 'bg-gray-100 text-gray-400'
-                            : rounds
-                            ? 'text-gray-400 hover:text-indigo-600'
-                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                        }`}
-                      >
-                        {isAnalyzing
-                          ? <><span className="animate-pulse">●</span> 分析中...</>
-                          : rounds ? '🔄 再分析' : '▶ 多角分析'}
-                      </button>
-                    </div>
-
-                    {isAnalyzing && (
-                      <div className="space-y-1.5">
-                        {['GPT', 'Gemini', 'Claude'].map(m => (
-                          <div key={m} className="bg-white rounded-lg p-2 animate-pulse">
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <div className="w-1.5 h-1.5 rounded-full bg-gray-200" />
-                              <div className="h-2 bg-gray-200 rounded w-16" />
-                            </div>
-                            <div className="space-y-1">
-                              <div className="h-1.5 bg-gray-100 rounded w-full" />
-                              <div className="h-1.5 bg-gray-100 rounded w-4/5" />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {!isAnalyzing && rounds && rounds.length > 0 && (
-                      <div className="space-y-1.5">
-                        {rounds.map((round, i) => {
-                          const c = MODEL_COLOR[round.model] ?? MODEL_COLOR.GPT
-                          return (
-                            <div key={i} className={`rounded-lg p-2 border ${c.bg} ${c.border}`}>
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <div className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
-                                <span className={`text-[9px] font-bold ${c.text}`}>
-                                  {MODEL_EMOJI[round.model]} {round.model} — {round.role}
-                                </span>
-                                <span className={`text-[8px] px-1 py-0.5 rounded-full bg-white/60 ${c.text} ml-auto`}>
-                                  {round.perspective}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-gray-700 leading-relaxed whitespace-pre-wrap">
-                                {round.content}
-                              </p>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-
-                    {!isAnalyzing && !rounds && (
-                      <p className="text-[9px] text-gray-400 text-center py-1">
-                        GPT・Gemini・Claudeが異なる視点で分析します
-                      </p>
-                    )}
-                  </div>
-
                   <button onClick={() => handleDelete(note.id)}
                     className="text-[9px] text-red-400 hover:text-red-600 transition-colors">
                     🗑 削除する
