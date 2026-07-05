@@ -17,6 +17,8 @@ interface Props {
   onQASubmit: (topic: string) => void
   onFollowupQA: (entryId: string, question: string) => void
   onCloseQA: (entryId: string) => void
+  liveActive: boolean
+  onToggleLive: () => void
 }
 
 const TABS: { key: TabKey; label: string; emoji: string }[] = [
@@ -100,7 +102,7 @@ function DiscussionView({ discussion, agents }: { discussion: DiscussionRound[];
   )
 }
 
-export default function RightPanel({ agents, messages, minutes, qaEntries, onQASubmit, onFollowupQA, onCloseQA }: Props) {
+export default function RightPanel({ agents, messages, minutes, qaEntries, onQASubmit, onFollowupQA, onCloseQA, liveActive, onToggleLive }: Props) {
   const [tab, setTab]           = useState<TabKey>('activity')
   const [question, setQuestion] = useState('')
   const [qaViewMode, setQaViewMode] = useState<Record<string, QAViewMode>>({})
@@ -162,7 +164,29 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
 
       {/* ── ACTIVITY ────────────────────────────── */}
       {tab === 'activity' && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* ON/OFFトグル */}
+          <div className="flex-shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-gray-100 bg-gray-50">
+            <span className="text-[10px] text-gray-500 font-medium">
+              {liveActive ? (
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                  AI自律稼働中
+                </span>
+              ) : (
+                <span className="text-gray-400">一時停止中</span>
+              )}
+            </span>
+            <button onClick={onToggleLive}
+              className={`text-[9px] font-bold px-2.5 py-1 rounded-full border transition-colors ${
+                liveActive
+                  ? 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'
+                  : 'bg-green-50 border-green-200 text-green-600 hover:bg-green-100'
+              }`}>
+              {liveActive ? '⏸ 停止' : '▶ 再開'}
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6">
               <div className="text-4xl mb-3 opacity-40">🔴</div>
@@ -212,6 +236,7 @@ export default function RightPanel({ agents, messages, minutes, qaEntries, onQAS
               <div ref={bottomRef} />
             </div>
           )}
+          </div>
         </div>
       )}
 

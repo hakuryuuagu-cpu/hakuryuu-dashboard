@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import {
   INITIAL_AI_AGENTS, INITIAL_TASK_DATA, INITIAL_PHILOSOPHY,
-  AGENT_ACTIVITIES, QA_TEMPLATES,
 } from '@/lib/constants'
 import type {
   AIAgent, AIDeliberation, Task, TaskStatus, TaskTimeframe, TaskHistoryEntry,
@@ -19,7 +18,6 @@ import RightPanel from './RightPanel'
 import CompleteTaskModal from './CompleteTaskModal'
 
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
-function pickRandom<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)] }
 
 export default function VirtualOffice() {
   const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS)
@@ -28,6 +26,7 @@ export default function VirtualOffice() {
   )
   const [philosophy, setPhilosophy] = useState<Philosophy>(INITIAL_PHILOSOPHY)
   const [activityMessages, setActivityMessages] = useState<ActivityMessage[]>([])
+  const [liveActive, setLiveActive] = useState(true)
   const [minutes, setMinutes] = useState<MinutesEntry[]>([])
   const [qaEntries, setQaEntries] = useState<QAEntry[]>([])
   const [humanMembers, setHumanMembers] = useState<HumanMember[]>([])
@@ -44,38 +43,74 @@ export default function VirtualOffice() {
   const msgIdxRef   = useRef(0)
   const minBufRef   = useRef<ActivityMessage[]>([])
 
+  // AI生成のライブメッセージを60秒ごとに取得
+  const tasksRef      = useRef(tasks)
+  tasksRef.current    = tasks
+  const liveActiveRef = useRef(liveActive)
+  liveActiveRef.current = liveActive
+
   useEffect(() => {
-    const interval = setInterval(() => {
+    const fetchLiveMessages = async () => {
       const currentAgents = agentsRef.current
+      const currentTasks  = tasksRef.current
       if (currentAgents.length === 0) return
-      const agent = currentAgents[msgIdxRef.current % currentAgents.length]
-      msgIdxRef.current++
-      const lines = AGENT_ACTIVITIES[agent.id] ?? []
-      if (lines.length === 0) return
-      const msg: ActivityMessage = {
-        id: uid(), agentId: agent.id, agentName: agent.name,
-        agentColor: agent.color, agentInitials: agent.initials,
-        content: pickRandom(lines), timestamp: new Date(), isAudit: agent.isAudit,
+      if (!liveActiveRef.current) return  // OFFなら何もしない
+      try {
+        const res = await fetch('/api/live-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agents: currentAgents.map(a => ({
+              id: a.id, name: a.name, role: a.role,
+              specialties: a.specialties, isAudit: !!a.isAudit,
+            })),
+            tasks: currentTasks.map(t => ({
+              title: t.title, status: t.status, category: t.category,
+            })),
+          }),
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const messages: Array<{ agentId: string; agentName: string; content: string }> = data.messages ?? []
+
+        messages.forEach((m, i) => {
+          const agent = currentAgents.find(a => a.id === m.agentId)
+            ?? currentAgents.find(a => a.name === m.agentName)
+          if (!agent) return
+          setTimeout(() => {
+            const msg: ActivityMessage = {
+              id: uid(), agentId: agent.id, agentName: agent.name,
+              agentColor: agent.color, agentInitials: agent.initials,
+              content: m.content, timestamp: new Date(), isAudit: agent.isAudit,
+            }
+            setActivityMessages(prev => [...prev.slice(-80), msg])
+            minBufRef.current = [...minBufRef.current, msg]
+            msgIdxRef.current++
+            if (msgIdxRef.current % 6 === 0 && minBufRef.current.length >= 3) {
+              const buf = minBufRef.current.slice(-6)
+              const participants = [...new Set(buf.map(x => x.agentName))]
+              const highlights   = buf.filter(x => x.isAudit).map(x => x.content)
+              const entry: MinutesEntry = {
+                id: uid(),
+                date: new Date().toLocaleDateString('ja-JP'),
+                time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                participants,
+                summary: buf.filter(x => !x.isAudit).map(x => x.content).join('。') + '。',
+                highlights: highlights.slice(0, 2),
+                createdAt: new Date(),
+              }
+              setMinutes(prev => [entry, ...prev.slice(0, 19)])
+              minBufRef.current = []
+            }
+          }, i * 12000) // 12秒ずつ表示
+        })
+      } catch (e) {
+        console.error('live-activity error:', e)
       }
-      setActivityMessages(prev => [...prev.slice(-80), msg])
-      minBufRef.current = [...minBufRef.current, msg]
-      if (msgIdxRef.current % 6 === 0 && minBufRef.current.length >= 3) {
-        const buf = minBufRef.current.slice(-6)
-        const participants = [...new Set(buf.map(m => m.agentName))]
-        const highlights   = buf.filter(m => m.isAudit).map(m => m.content)
-        const entry: MinutesEntry = {
-          id: uid(),
-          date: new Date().toLocaleDateString('ja-JP'),
-          time: new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-          participants,
-          summary: `${participants.join('・')}が業務報告を実施。各部門の進捗と課題を共有。`,
-          highlights: highlights.slice(0, 2),
-          createdAt: new Date(),
-        }
-        setMinutes(prev => [entry, ...prev.slice(0, 19)])
-        minBufRef.current = []
-      }
-    }, 4000)
+    }
+
+    fetchLiveMessages() // 初回即時実行
+    const interval = setInterval(fetchLiveMessages, 60000) // 60秒ごと
     return () => clearInterval(interval)
   }, [])
 
@@ -224,21 +259,21 @@ export default function VirtualOffice() {
           })
           setTimeout(onDone, data.responses.length * 500 + 800)
         } else {
-          throw new Error(data.error ?? 'エラー')
+          throw new Error(data.error ?? 'AIからの応答がありませんでした')
         }
-      } catch {
-        currentAgents.forEach((agent, i) => {
-          setTimeout(() => {
-            const templates = QA_TEMPLATES[agent.id] ?? QA_TEMPLATES._default ?? []
-            const content = pickRandom(templates).replace(/\{topic\}/g, topic)
-            onResponse({
-              agentId: agent.id, agentName: agent.name,
-              agentColor: agent.color, agentInitials: agent.initials,
-              content, type: agent.isAudit ? 'risk' : 'opinion', isAudit: agent.isAudit,
-            }, i)
-          }, i * 400)
-        })
-        setTimeout(onDone, currentAgents.length * 400 + 800)
+      } catch (err) {
+        // AI失敗時はエラーメッセージを1件表示
+        const errorMsg = err instanceof Error ? err.message : 'AI接続エラー'
+        const firstAgent = currentAgents[0]
+        if (firstAgent) {
+          onResponse({
+            agentId: 'system', agentName: 'システム',
+            agentColor: '#ef4444', agentInitials: '!',
+            content: `⚠️ AIに接続できませんでした（${errorMsg}）。APIキーとネットワークを確認してください。`,
+            type: 'risk', isAudit: false,
+          }, 0)
+        }
+        setTimeout(onDone, 1000)
       }
     })()
   }, [])
@@ -390,6 +425,8 @@ export default function VirtualOffice() {
           onQASubmit={handleQASubmit}
           onFollowupQA={handleFollowupQA}
           onCloseQA={handleCloseQA}
+          liveActive={liveActive}
+          onToggleLive={() => setLiveActive(v => !v)}
         />
       </div>
 
