@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, supabaseEnabled } from '@/lib/supabase'
 import type { ResearchNote, ResearchCategory } from '@/lib/types'
 
 const STORAGE_KEY = 'hakuryuu_research_notes'
@@ -156,7 +156,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
     initDone.current = true
 
     const loadNotes = async () => {
-      if (supabase) {
+      if (supabaseEnabled) {
         setSaveMode('supabase')
         try {
           const { data, error } = await supabase
@@ -200,7 +200,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
   }, [externalNote])
 
   const handleSave = async (note: ResearchNote) => {
-    if (supabase && saveMode === 'supabase') {
+    if (supabaseEnabled && saveMode === 'supabase') {
       try {
         await supabase.from('research_notes').upsert({
           id: note.id,
@@ -226,7 +226,7 @@ export default function ResearchNoteTab({ externalNote, onExternalNoteHandled }:
   }
 
   const handleDelete = async (id: string) => {
-    if (supabase && saveMode === 'supabase') {
+    if (supabaseEnabled && saveMode === 'supabase') {
       try { await supabase.from('research_notes').delete().eq('id', id) } catch {}
     } else {
       try {
