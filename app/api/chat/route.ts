@@ -130,95 +130,118 @@ export async function POST(req: Request) {
 
   const body = await req.json()
 
-  // ── バッチモード（QA質問）──────────────────────────────────
+  // ── 円卓討論モード（QA質問）──────────────────────────────────
   if (body.agents && body.topic) {
     const agents: AgentInfo[] = body.agents
     const topic: string = body.topic
 
-    // Round 1: GPT 初期分析
-    let gptRes: BatchResponse[] = []
+    // 発言順：非監査AI → 監査AI
+    const ordered = [
+      ...agents.filter(a => !a.isAudit),
+      ...agents.filter(a => a.isAudit),
+    ]
+
+    const agentList = ordered.map((a, i) =>
+      `${i + 1}. id="${a.id}" 名前="${a.name}" 役割="${a.role}" 専門="${a.specialties.join('、')}"` +
+      (a.isAudit ? '（監査担当・最後に全員の意見を踏まえてリスク総括）' : '')
+    ).join('\n')
+
+    const discussionPrompt = `あなたは「あぐー豚しゃぶ 居酒屋 はくりゅう 錦」（名古屋市中区錦・個室居酒屋）の2号店出店プロジェクト専門AIチームです。
+
+以下の議題について、メンバー全員が順番に発言する円卓討論を生成してください。
+
+【議題】
+${topic}
+
+【参加者（この順番で発言）】
+${agentList}
+
+【討論ルール】
+- 1番目：自分の専門視点から初期見解を述べる
+- 2番目以降：「〇〇さんの〜という点を踏まえ、私の立場からは〜」の形で、前の発言者を名指しして引用してから自分の意見を加える
+- 全員が必ず具体的・実際的な情報を含める（例：「名古屋市中区の居酒屋坪単価は約〇万円」「競合店の客単価は平均〇円」「周辺の昼間人口は〇万人」などの数字・データ）
+- 監査AI：全員の発言を踏まえてリスクと対策を具体的に総括する
+- 各発言は200文字以内、討論らしい自然な口語で
+
+JSON配列のみを返してください（説明・前置き不要）:
+[
+  {"agentId": "id値", "agentName": "名前", "content": "発言内容（前の人を踏まえた具体的な討論）"},
+  ...
+]`
+
+    // GPT優先 → Geminiフォールバック
+    let discussion: Array<{ agentId: string; agentName: string; content: string }> = []
+
     if (openaiKey) {
       try {
-        gptRes = await callGPT(openaiKey, buildPrompt(agents, topic, 'initial', ''))
-        console.log('[Chat] GPT OK:', gptRes.length, 'responses')
+        const res = await fetch(OPENAI_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cleanKey(openaiKey)}` },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: discussionPrompt }],
+            max_tokens: 2000,
+            temperature: 0.85,
+          }),
+        })
+        const data = await res.json()
+        const text = data.choices?.[0]?.message?.content ?? ''
+        const match = text.match(/\[[\s\S]*?\]/)
+        if (match) {
+          const parsed = JSON.parse(match[0])
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            discussion = parsed
+            console.log('[Chat] GPT discussion OK:', discussion.length, 'turns')
+          }
+        }
       } catch (e) {
         console.error('[Chat] GPT failed:', e instanceof Error ? e.message : e)
       }
     }
 
-    // Round 2: Gemini 補完視点
-    let geminiRes: BatchResponse[] = []
-    const gptCtxForGemini = gptRes.length > 0 ? formatContext('GPT', gptRes, agents) : ''
-    try {
-      geminiRes = await callGemini(
-        geminiKey,
-        buildPrompt(agents, topic, gptRes.length > 0 ? 'supplement' : 'initial', gptCtxForGemini)
-      )
-      console.log('[Chat] Gemini OK:', geminiRes.length, 'responses')
-    } catch (e) {
-      console.error('[Chat] Gemini failed (non-fatal):', e instanceof Error ? e.message : e)
-    }
-
-    // Round 3: Claude 統合
-    let claudeRes: BatchResponse[] = []
-    if (anthropicKey) {
-      const gptCtx = gptRes.length > 0 ? formatContext('GPT', gptRes, agents) : ''
-      const gemCtx = geminiRes.length > 0 ? '\n\n' + formatContext('Gemini', geminiRes, agents) : ''
-      const available = gptCtx + gemCtx
+    if (discussion.length === 0) {
       try {
-        claudeRes = await callClaude(anthropicKey, buildPrompt(agents, topic, available.length > 0 ? 'synthesize' : 'initial', available))
-        console.log('[Chat] Claude OK:', claudeRes.length, 'responses')
+        const res = await fetch(`${GEMINI_URL}?key=${cleanKey(geminiKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: discussionPrompt }] }],
+            generationConfig: { temperature: 0.85, maxOutputTokens: 2000 },
+          }),
+        })
+        const data = await res.json()
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? ''
+        const match = text.match(/\[[\s\S]*?\]/)
+        if (match) {
+          const parsed = JSON.parse(match[0])
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            discussion = parsed
+            console.log('[Chat] Gemini discussion OK:', discussion.length, 'turns')
+          }
+        }
       } catch (e) {
-        console.error('[Chat] Claude failed:', e instanceof Error ? e.message : e)
+        console.error('[Chat] Gemini failed:', e instanceof Error ? e.message : e)
       }
     }
 
-    const finalSource = claudeRes.length > 0 ? claudeRes : gptRes.length > 0 ? gptRes : geminiRes
-
-    if (finalSource.length === 0) {
-      return NextResponse.json({ error: '全モデルへの接続に失敗しました。APIキーを確認してください。' }, { status: 500 })
+    if (discussion.length === 0) {
+      return NextResponse.json({ error: 'AIへの接続に失敗しました。APIキーを確認してください。' }, { status: 500 })
     }
 
-    // 最終回答 + 議論過程
-    const responses = finalSource.map(r => {
-      const deliberation: { model: string; text: string }[] = []
-      const p = gptRes.find(x => x.agentId === r.agentId)
-      const g = geminiRes.find(x => x.agentId === r.agentId)
-      const c = claudeRes.find(x => x.agentId === r.agentId)
-      if (p) deliberation.push({ model: 'GPT',    text: p.content })
-      if (g) deliberation.push({ model: 'Gemini', text: g.content })
-      if (c) deliberation.push({ model: 'Claude', text: c.content })
-      return { ...r, deliberation }
-    })
+    // frontendが期待する形式に変換
+    const responses = discussion.map(r => ({
+      agentId: r.agentId,
+      agentName: r.agentName,
+      content: r.content,
+    }))
 
-    // ディスカッションラウンド構築
-    const discussion: DiscussionRound[] = []
-    if (gptRes.length > 0) discussion.push({
-      model: 'GPT', label: 'GPT — 初期分析',
-      responses: gptRes.map(r => ({ agentId: r.agentId, agentName: agents.find(a => a.id === r.agentId)?.name ?? r.agentId, content: r.content }))
-    })
-    if (geminiRes.length > 0) discussion.push({
-      model: 'Gemini', label: 'Gemini — 補足視点',
-      responses: geminiRes.map(r => ({ agentId: r.agentId, agentName: agents.find(a => a.id === r.agentId)?.name ?? r.agentId, content: r.content }))
-    })
-    if (claudeRes.length > 0) discussion.push({
-      model: 'Claude', label: 'Claude — 統合回答',
-      responses: claudeRes.map(r => ({ agentId: r.agentId, agentName: agents.find(a => a.id === r.agentId)?.name ?? r.agentId, content: r.content }))
-    })
+    const discussionRounds: DiscussionRound[] = [{
+      model: 'GPT',
+      label: '円卓討論',
+      responses: discussion.map(r => ({ agentId: r.agentId, agentName: r.agentName, content: r.content })),
+    }]
 
-    // インサイト抽出
-    let insights: Insights = { questions: [], improvements: [], actions: [], risks: [] }
-    if (openaiKey && discussion.length > 0) {
-      const allContext = discussion.map(d => formatContext(d.label, d.responses.map(r => ({ agentId: r.agentId, content: r.content })), agents)).join('\n\n')
-      try {
-        insights = await extractInsights(openaiKey, topic, allContext)
-        console.log('[Chat] Insights OK')
-      } catch (e) {
-        console.error('[Chat] Insights failed:', e instanceof Error ? e.message : e)
-      }
-    }
-
-    return NextResponse.json({ responses, discussion, insights })
+    return NextResponse.json({ responses, discussion: discussionRounds, insights: { questions: [], improvements: [], actions: [], risks: [] } })
   }
 
   // ── シングルモード（マーケAIレポート等）─────────────────────
