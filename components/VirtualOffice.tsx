@@ -20,13 +20,7 @@ import CompleteTaskModal from './CompleteTaskModal'
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
 export default function VirtualOffice() {
-  const [agents, setAgents] = useState<AIAgent[]>(() => {
-    try {
-      const stored = localStorage.getItem('hakuryuu_agents')
-      if (stored) return JSON.parse(stored) as AIAgent[]
-    } catch {}
-    return INITIAL_AI_AGENTS
-  })
+  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS)
   const [tasks, setTasks] = useState<Task[]>(() =>
     INITIAL_TASK_DATA.map(t => ({ ...t, createdAt: new Date() }))
   )
@@ -42,10 +36,24 @@ export default function VirtualOffice() {
   const [showEditPhil, setShowEditPhil] = useState(false)
   const [pendingComplete, setPendingComplete] = useState<{ taskId: string; taskTitle: string } | null>(null)
 
-  // agentsをlocalStorageに永続化
+  // agentsのlocalStorage永続化
+  // ※ 保存エフェクトをロードエフェクトより先に定義することで
+  //   初回マウント時の誤上書きを防ぐ（Reactはエフェクトを定義順に実行する）
+  const agentsLoadedRef = useRef(false)
   useEffect(() => {
+    if (!agentsLoadedRef.current) return  // ロード完了前は保存しない
     try { localStorage.setItem('hakuryuu_agents', JSON.stringify(agents)) } catch {}
   }, [agents])
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('hakuryuu_agents')
+      if (stored) {
+        const parsed = JSON.parse(stored) as AIAgent[]
+        if (Array.isArray(parsed) && parsed.length > 0) setAgents(parsed)
+      }
+    } catch {}
+    agentsLoadedRef.current = true
+  }, [])
 
   const agentsRef      = useRef(agents)
   agentsRef.current    = agents
