@@ -65,7 +65,7 @@ function NotionSyncButton({ tasks, agents, humanMembers }: { tasks: Task[]; agen
 
 export default function VirtualOffice() {
   const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS)
-  const [tasks, setTasks] = useState<Task[]>(() =>
+  const [tasks, setTasks] = useState<Task[]>(
     INITIAL_TASK_DATA.map(t => ({ ...t, createdAt: new Date() }))
   )
   const [philosophy, setPhilosophy] = useState<Philosophy>(INITIAL_PHILOSOPHY)
@@ -97,6 +97,16 @@ export default function VirtualOffice() {
       if (m) {
         const parsed = JSON.parse(m) as HumanMember[]
         if (Array.isArray(parsed)) setHumanMembers(parsed)
+      }
+    } catch {}
+    try {
+      const t = localStorage.getItem('hakuryuu_tasks')
+      if (t) {
+        const parsed = JSON.parse(t) as Task[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // createdAt を Date オブジェクトに復元
+          setTasks(parsed.map(task => ({ ...task, createdAt: new Date(task.createdAt) })))
+        }
       }
     } catch {}
   }, [])
@@ -224,11 +234,16 @@ export default function VirtualOffice() {
     }
   }, [])
 
+  const saveTasks = (next: Task[]) => {
+    try { localStorage.setItem('hakuryuu_tasks', JSON.stringify(next)) } catch {}
+  }
+
   const handleAddTask = useCallback((task: Omit<Task, 'id' | 'createdAt'>) => {
-    setTasks(prev => [...prev, { ...task, id: uid(), createdAt: new Date() }])
+    const newTask = { ...task, id: uid(), createdAt: new Date() }
+    setTasks(prev => { const next = [...prev, newTask]; saveTasks(next); return next })
     setShowAddTask(false)
     triggerTaskDiscussion(task)
-    // Notionに非同期で同期（エラーはサイレント）
+    // Notionに非同期で同期
     const assignee =
       agentsRef.current.find(a => a.id === task.assigneeId)?.name ??
       humanMembersRef.current?.find((m: HumanMember) => m.id === task.assigneeId)?.name
@@ -236,14 +251,9 @@ export default function VirtualOffice() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title:        task.title,
-        description:  task.description,
-        assigneeName: assignee,
-        status:       task.status,
-        priority:     task.priority,
-        timeframe:    task.timeframe,
-        dueDate:      task.dueDate,
-        category:     task.category,
+        title: task.title, description: task.description, assigneeName: assignee,
+        status: task.status, priority: task.priority, timeframe: task.timeframe,
+        dueDate: task.dueDate, category: task.category,
       }),
     }).catch(() => {})
   }, [triggerTaskDiscussion])
@@ -257,37 +267,42 @@ export default function VirtualOffice() {
       })
       return
     }
-    setTasks(prev => prev.map(t => {
-      if (t.id !== taskId) return t
-      const h: TaskHistoryEntry = {
-        id: uid(),
-        date: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        fromStatus: t.status,
-        toStatus: status,
-      }
-      return { ...t, status, history: [...(t.history ?? []), h] }
-    }))
+    setTasks(prev => {
+      const next = prev.map(t => {
+        if (t.id !== taskId) return t
+        const h: TaskHistoryEntry = {
+          id: uid(),
+          date: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          fromStatus: t.status, toStatus: status,
+        }
+        return { ...t, status, history: [...(t.history ?? []), h] }
+      })
+      saveTasks(next)
+      return next
+    })
   }, [])
 
   const handleCompleteTask = useCallback((note: string) => {
     if (!pendingComplete) return
     const { taskId } = pendingComplete
-    setTasks(prev => prev.map(t => {
-      if (t.id !== taskId) return t
-      const h: TaskHistoryEntry = {
-        id: uid(),
-        date: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        fromStatus: t.status,
-        toStatus: '完了',
-        note: note || undefined,
-      }
-      return { ...t, status: '完了', completionNote: note || t.completionNote, history: [...(t.history ?? []), h] }
-    }))
+    setTasks(prev => {
+      const next = prev.map(t => {
+        if (t.id !== taskId) return t
+        const h: TaskHistoryEntry = {
+          id: uid(),
+          date: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          fromStatus: t.status, toStatus: '完了', note: note || undefined,
+        }
+        return { ...t, status: '完了', completionNote: note || t.completionNote, history: [...(t.history ?? []), h] }
+      })
+      saveTasks(next)
+      return next
+    })
     setPendingComplete(null)
   }, [pendingComplete])
 
   const handleDeleteTask = useCallback((taskId: string) => {
-    setTasks(prev => prev.filter(t => t.id !== taskId))
+    setTasks(prev => { const next = prev.filter(t => t.id !== taskId); saveTasks(next); return next })
   }, [])
 
   const handleAddHuman = useCallback((member: HumanMember) => {
