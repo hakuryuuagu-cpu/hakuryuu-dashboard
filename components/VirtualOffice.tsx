@@ -57,8 +57,10 @@ export default function VirtualOffice() {
     } catch {}
   }, [])
 
-  const agentsRef      = useRef(agents)
-  agentsRef.current    = agents
+  const agentsRef        = useRef(agents)
+  agentsRef.current      = agents
+  const humanMembersRef  = useRef(humanMembers)
+  humanMembersRef.current = humanMembers
   const qaEntriesRef   = useRef(qaEntries)
   qaEntriesRef.current = qaEntries
   const msgIdxRef   = useRef(0)
@@ -182,6 +184,24 @@ export default function VirtualOffice() {
     setTasks(prev => [...prev, { ...task, id: uid(), createdAt: new Date() }])
     setShowAddTask(false)
     triggerTaskDiscussion(task)
+    // Notionに非同期で同期（エラーはサイレント）
+    const assignee =
+      agentsRef.current.find(a => a.id === task.assigneeId)?.name ??
+      humanMembersRef.current?.find((m: HumanMember) => m.id === task.assigneeId)?.name
+    fetch('/api/notion-task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title:        task.title,
+        description:  task.description,
+        assigneeName: assignee,
+        status:       task.status,
+        priority:     task.priority,
+        timeframe:    task.timeframe,
+        dueDate:      task.dueDate,
+        category:     task.category,
+      }),
+    }).catch(() => {})
   }, [triggerTaskDiscussion])
 
   const handleUpdateStatus = useCallback((taskId: string, status: TaskStatus) => {
