@@ -238,24 +238,27 @@ export default function VirtualOffice() {
     try { localStorage.setItem('hakuryuu_tasks', JSON.stringify(next)) } catch {}
   }
 
-  const handleAddTask = useCallback((task: Omit<Task, 'id' | 'createdAt'>) => {
-    const newTask = { ...task, id: uid(), createdAt: new Date() }
-    setTasks(prev => { const next = [...prev, newTask]; saveTasks(next); return next })
+  const handleAddTask = useCallback((taskDefs: Array<Omit<Task, 'id' | 'createdAt'>>) => {
+    const newTasks = taskDefs.map(task => ({ ...task, id: uid(), createdAt: new Date() }))
+    setTasks(prev => { const next = [...prev, ...newTasks]; saveTasks(next); return next })
     setShowAddTask(false)
-    triggerTaskDiscussion(task)
-    // Notionに非同期で同期
-    const assignee =
-      agentsRef.current.find(a => a.id === task.assigneeId)?.name ??
-      humanMembersRef.current?.find((m: HumanMember) => m.id === task.assigneeId)?.name
-    fetch('/api/notion-task', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: task.title, description: task.description, assigneeName: assignee,
-        status: task.status, priority: task.priority, timeframe: task.timeframe,
-        dueDate: task.dueDate, category: task.category,
-      }),
-    }).catch(() => {})
+    // 最初のタスクでAI議論をトリガー（複数でも1回）
+    if (taskDefs.length > 0) triggerTaskDiscussion(taskDefs[0])
+    // 各タスクをNotionに非同期で同期
+    taskDefs.forEach(task => {
+      const assignee =
+        agentsRef.current.find(a => a.id === task.assigneeId)?.name ??
+        humanMembersRef.current?.find((m: HumanMember) => m.id === task.assigneeId)?.name
+      fetch('/api/notion-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: task.title, description: task.description, assigneeName: assignee,
+          status: task.status, priority: task.priority, timeframe: task.timeframe,
+          dueDate: task.dueDate, category: task.category,
+        }),
+      }).catch(() => {})
+    })
   }, [triggerTaskDiscussion])
 
   const handleUpdateStatus = useCallback((taskId: string, status: TaskStatus) => {

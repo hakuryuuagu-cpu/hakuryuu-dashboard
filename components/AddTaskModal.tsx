@@ -7,7 +7,7 @@ interface Props {
   agents: AIAgent[]
   humanMembers?: HumanMember[]
   defaultTimeframe: TaskTimeframe
-  onAdd: (task: Omit<Task, 'id' | 'createdAt'>) => void
+  onAdd: (tasks: Array<Omit<Task, 'id' | 'createdAt'>>) => void
   onClose: () => void
 }
 
@@ -27,7 +27,7 @@ const CATEGORY_PRESETS = [
 export default function AddTaskModal({ agents, humanMembers = [], defaultTimeframe, onAdd, onClose }: Props) {
   const [title, setTitle]           = useState('')
   const [description, setDescription] = useState('')
-  const [assigneeId, setAssigneeId] = useState(agents[0]?.id ?? '')
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([agents[0]?.id ?? ''].filter(Boolean))
   const [status, setStatus]         = useState<TaskStatus>('未着手')
   const [priority, setPriority]     = useState<TaskPriority>('中')
   const [timeframe, setTimeframe]   = useState<TaskTimeframe>(defaultTimeframe)
@@ -35,11 +35,17 @@ export default function AddTaskModal({ agents, humanMembers = [], defaultTimefra
   const [category, setCategory]     = useState('')
   const [customCat, setCustomCat]   = useState(false)
 
-  const canSubmit = title.trim().length > 0 && !!assigneeId
+  const toggleAssignee = (id: string) => {
+    setAssigneeIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  const canSubmit = title.trim().length > 0 && assigneeIds.length > 0
 
   const handleSubmit = () => {
     if (!canSubmit) return
-    onAdd({
+    onAdd(assigneeIds.map(assigneeId => ({
       title: title.trim(),
       description: description.trim() || undefined,
       assigneeId,
@@ -48,7 +54,7 @@ export default function AddTaskModal({ agents, humanMembers = [], defaultTimefra
       timeframe,
       dueDate: dueDate || undefined,
       category: category || undefined,
-    })
+    })))
   }
 
   return (
@@ -94,39 +100,62 @@ export default function AddTaskModal({ agents, humanMembers = [], defaultTimefra
 
           {/* Assignee */}
           <div>
-            <label className="text-xs font-semibold text-gray-600 block mb-1.5">担当者 *</label>
+            <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+              担当者 *
+              {assigneeIds.length > 1 && (
+                <span className="ml-2 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                  {assigneeIds.length}人に割り当て
+                </span>
+              )}
+            </label>
             <div className="grid grid-cols-2 gap-1.5">
-              {agents.map(a => (
-                <button key={a.id} onClick={() => setAssigneeId(a.id)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${assigneeId === a.id ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0"
-                    style={{ backgroundColor: a.color }}>
-                    {a.initials}
-                  </div>
-                  <div className="min-w-0">
-                    <p className={`text-xs font-semibold truncate ${assigneeId === a.id ? 'text-indigo-700' : 'text-gray-800'}`}>{a.name}</p>
-                    <p className="text-[9px] text-gray-400 truncate">{a.role}</p>
-                  </div>
-                </button>
-              ))}
+              {agents.map(a => {
+                const selected = assigneeIds.includes(a.id)
+                return (
+                  <button key={a.id} onClick={() => toggleAssignee(a.id)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${selected ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                    <div className="relative w-6 h-6 flex-shrink-0">
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
+                        style={{ backgroundColor: a.color }}>
+                        {a.initials}
+                      </div>
+                      {selected && (
+                        <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full flex items-center justify-center text-white text-[7px] font-bold">✓</div>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-semibold truncate ${selected ? 'text-indigo-700' : 'text-gray-800'}`}>{a.name}</p>
+                      <p className="text-[9px] text-gray-400 truncate">{a.role}</p>
+                    </div>
+                  </button>
+                )
+              })}
               {humanMembers.length > 0 && (
                 <>
                   <div className="col-span-2 pt-1 pb-0.5">
                     <p className="text-[9px] font-bold text-gray-400">👤 登録メンバー</p>
                   </div>
-                  {humanMembers.map(m => (
-                    <button key={m.id} onClick={() => setAssigneeId(m.id)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${assigneeId === m.id ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm flex-shrink-0"
-                        style={{ backgroundColor: m.color + '33' }}>
-                        {m.emoji}
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`text-xs font-semibold truncate ${assigneeId === m.id ? 'text-indigo-700' : 'text-gray-800'}`}>{m.name}</p>
-                        <p className="text-[9px] text-gray-400 truncate">{m.role}</p>
-                      </div>
-                    </button>
-                  ))}
+                  {humanMembers.map(m => {
+                    const selected = assigneeIds.includes(m.id)
+                    return (
+                      <button key={m.id} onClick={() => toggleAssignee(m.id)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${selected ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                        <div className="relative w-6 h-6 flex-shrink-0">
+                          <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm"
+                            style={{ backgroundColor: m.color + '33' }}>
+                            {m.emoji}
+                          </div>
+                          {selected && (
+                            <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-indigo-600 rounded-full flex items-center justify-center text-white text-[7px] font-bold">✓</div>
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`text-xs font-semibold truncate ${selected ? 'text-indigo-700' : 'text-gray-800'}`}>{m.name}</p>
+                          <p className="text-[9px] text-gray-400 truncate">{m.role}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
                 </>
               )}
             </div>
@@ -216,7 +245,7 @@ export default function AddTaskModal({ agents, humanMembers = [], defaultTimefra
           </button>
           <button onClick={handleSubmit} disabled={!canSubmit}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${canSubmit ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
-            タスクを登録
+            {assigneeIds.length > 1 ? `${assigneeIds.length}件のタスクを登録` : 'タスクを登録'}
           </button>
         </div>
       </div>
