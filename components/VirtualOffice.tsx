@@ -20,7 +20,13 @@ import CompleteTaskModal from './CompleteTaskModal'
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
 export default function VirtualOffice() {
-  const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS)
+  const [agents, setAgents] = useState<AIAgent[]>(() => {
+    try {
+      const stored = localStorage.getItem('hakuryuu_agents')
+      if (stored) return JSON.parse(stored) as AIAgent[]
+    } catch {}
+    return INITIAL_AI_AGENTS
+  })
   const [tasks, setTasks] = useState<Task[]>(() =>
     INITIAL_TASK_DATA.map(t => ({ ...t, createdAt: new Date() }))
   )
@@ -35,6 +41,11 @@ export default function VirtualOffice() {
   const [showAddAgent, setShowAddAgent] = useState(false)
   const [showEditPhil, setShowEditPhil] = useState(false)
   const [pendingComplete, setPendingComplete] = useState<{ taskId: string; taskTitle: string } | null>(null)
+
+  // agentsをlocalStorageに永続化
+  useEffect(() => {
+    try { localStorage.setItem('hakuryuu_agents', JSON.stringify(agents)) } catch {}
+  }, [agents])
 
   const agentsRef      = useRef(agents)
   agentsRef.current    = agents
