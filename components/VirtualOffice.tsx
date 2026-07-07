@@ -19,6 +19,50 @@ import CompleteTaskModal from './CompleteTaskModal'
 
 function uid() { return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }
 
+// Notionへ一括同期ボタン
+function NotionSyncButton({ tasks, agents, humanMembers }: { tasks: Task[]; agents: AIAgent[]; humanMembers: HumanMember[] }) {
+  const [status, setStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
+
+  const handleSync = async () => {
+    setStatus('syncing')
+    let failed = 0
+    for (const task of tasks) {
+      const assignee =
+        agents.find(a => a.id === task.assigneeId)?.name ??
+        humanMembers.find(m => m.id === task.assigneeId)?.name
+      try {
+        const res = await fetch('/api/notion-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title:        task.title,
+            description:  task.description,
+            assigneeName: assignee,
+            status:       task.status,
+            priority:     task.priority,
+            timeframe:    task.timeframe,
+            dueDate:      task.dueDate,
+            category:     task.category,
+          }),
+        })
+        if (!res.ok) failed++
+      } catch { failed++ }
+    }
+    setStatus(failed === 0 ? 'done' : 'error')
+    setTimeout(() => setStatus('idle'), 3000)
+  }
+
+  const label = status === 'syncing' ? '同期中…' : status === 'done' ? '✅ 完了' : status === 'error' ? '⚠️ 一部失敗' : '📤 Notionに同期'
+  const cls = status === 'done' ? 'bg-green-600 text-white' : status === 'error' ? 'bg-amber-500 text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
+
+  return (
+    <button onClick={handleSync} disabled={status === 'syncing'}
+      className={`px-3 py-1.5 text-xs font-medium rounded-xl transition-colors ${cls}`}>
+      {label}
+    </button>
+  )
+}
+
 export default function VirtualOffice() {
   const [agents, setAgents] = useState<AIAgent[]>(INITIAL_AI_AGENTS)
   const [tasks, setTasks] = useState<Task[]>(() =>
@@ -444,6 +488,7 @@ export default function VirtualOffice() {
             className="px-3 py-1.5 text-xs font-medium text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
             ✏️ 理念を編集
           </button>
+          <NotionSyncButton tasks={tasks} agents={agents} humanMembers={humanMembers} />
           <button onClick={() => handleOpenAddTask('week')}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition-colors shadow-sm">
             ＋ タスク追加
