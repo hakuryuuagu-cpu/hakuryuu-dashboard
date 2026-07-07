@@ -39,9 +39,13 @@ export default function VirtualOffice() {
   // agentsのlocalStorage永続化
   // ※ 保存エフェクトをロードエフェクトより先に定義することで
   //   初回マウント時の誤上書きを防ぐ（Reactはエフェクトを定義順に実行する）
-  const agentsLoadedRef = useRef(false)
+  // agents / humanMembers の localStorage 永続化
+  // 保存エフェクトをロードエフェクトより先に定義し、初回の誤上書きを防ぐ
+  const agentsLoadedRef  = useRef(false)
+  const membersLoadedRef = useRef(false)
+
   useEffect(() => {
-    if (!agentsLoadedRef.current) return  // ロード完了前は保存しない
+    if (!agentsLoadedRef.current) return
     try { localStorage.setItem('hakuryuu_agents', JSON.stringify(agents)) } catch {}
   }, [agents])
   useEffect(() => {
@@ -53,6 +57,21 @@ export default function VirtualOffice() {
       }
     } catch {}
     agentsLoadedRef.current = true
+  }, [])
+
+  useEffect(() => {
+    if (!membersLoadedRef.current) return
+    try { localStorage.setItem('hakuryuu_human_members', JSON.stringify(humanMembers)) } catch {}
+  }, [humanMembers])
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('hakuryuu_human_members')
+      if (stored) {
+        const parsed = JSON.parse(stored) as HumanMember[]
+        if (Array.isArray(parsed)) setHumanMembers(parsed)
+      }
+    } catch {}
+    membersLoadedRef.current = true
   }, [])
 
   const agentsRef      = useRef(agents)
