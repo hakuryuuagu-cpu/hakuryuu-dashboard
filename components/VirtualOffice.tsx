@@ -293,7 +293,7 @@ export default function VirtualOffice() {
           date: new Date().toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
           fromStatus: t.status, toStatus: '完了', note: note || undefined,
         }
-        return { ...t, status: '完了', completionNote: note || t.completionNote, history: [...(t.history ?? []), h] }
+        return { ...t, status: '完了' as TaskStatus, completionNote: note || t.completionNote, history: [...(t.history ?? []), h] }
       })
       saveTasks(next)
       return next
