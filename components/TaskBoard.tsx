@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import type { AIAgent, Task, TaskTimeframe, TaskStatus } from '@/lib/types'
+import type { AIAgent, HumanMember, Task, TaskTimeframe, TaskStatus } from '@/lib/types'
 import TaskDetailModal from './TaskDetailModal'
 
 interface Props {
   agents: AIAgent[]
+  humanMembers?: HumanMember[]
   tasks: Task[]
   onAddTask: (timeframe: TaskTimeframe) => void
   onUpdateStatus: (taskId: string, status: TaskStatus) => void
@@ -33,11 +34,19 @@ const PRIORITY_DOT: Record<string, string> = {
   '低': 'bg-gray-300',
 }
 
-export default function TaskBoard({ agents, tasks, onAddTask, onUpdateStatus, onDeleteTask }: Props) {
+export default function TaskBoard({ agents, humanMembers = [], tasks, onAddTask, onUpdateStatus, onDeleteTask }: Props) {
   const [hoveredId, setHoveredId]     = useState<string | null>(null)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
 
   const getAgent = (id: string) => agents.find(a => a.id === id)
+  // エージェントで見つからない場合は登録メンバーも検索
+  const getAssignee = (id: string): { name: string; color: string; label: string; isHuman: boolean; emoji?: string } | undefined => {
+    const agent = agents.find(a => a.id === id)
+    if (agent) return { name: agent.name, color: agent.color, label: agent.initials, isHuman: false }
+    const human = humanMembers.find(m => m.id === id)
+    if (human) return { name: human.name, color: human.color, label: human.emoji, isHuman: true }
+    return undefined
+  }
 
   const nextStatus = (cur: TaskStatus): TaskStatus =>
     STATUSES[(STATUSES.indexOf(cur) + 1) % STATUSES.length]
@@ -86,7 +95,7 @@ export default function TaskBoard({ agents, tasks, onAddTask, onUpdateStatus, on
                   </div>
                 ) : (
                   col.map(task => {
-                    const agent = getAgent(task.assigneeId)
+                    const assignee = getAssignee(task.assigneeId)
                     const isDone = task.status === '完了'
                     const isHov  = hoveredId === task.id
 
@@ -126,13 +135,13 @@ export default function TaskBoard({ agents, tasks, onAddTask, onUpdateStatus, on
 
                         {/* Assignee + Status */}
                         <div className="flex items-center gap-2 mt-2 pl-4">
-                          {agent ? (
+                          {assignee ? (
                             <div className="flex items-center gap-1 min-w-0">
-                              <div className="w-4 h-4 rounded-full flex items-center justify-center text-white text-[8px] font-bold flex-shrink-0"
-                                style={{ backgroundColor: agent.color }}>
-                                {agent.initials}
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${assignee.isHuman ? 'text-sm' : 'text-white text-[8px] font-bold'}`}
+                                style={{ backgroundColor: assignee.isHuman ? assignee.color + '33' : assignee.color }}>
+                                {assignee.label}
                               </div>
-                              <span className="text-[10px] text-gray-600 truncate">{agent.name}</span>
+                              <span className="text-[10px] text-gray-600 truncate">{assignee.name}</span>
                             </div>
                           ) : (
                             <span className="text-[10px] text-gray-400">未割当</span>

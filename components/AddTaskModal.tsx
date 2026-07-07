@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import type { AIAgent, Task, TaskTimeframe, TaskStatus, TaskPriority } from '@/lib/types'
+import type { AIAgent, HumanMember, Task, TaskTimeframe, TaskStatus, TaskPriority } from '@/lib/types'
 
 interface Props {
   agents: AIAgent[]
+  humanMembers?: HumanMember[]
   defaultTimeframe: TaskTimeframe
   onAdd: (task: Omit<Task, 'id' | 'createdAt'>) => void
   onClose: () => void
@@ -23,7 +24,7 @@ const CATEGORY_PRESETS = [
   '採用・研修', '市場調査', 'リスク管理', '経営計画', '物件', 'その他',
 ]
 
-export default function AddTaskModal({ agents, defaultTimeframe, onAdd, onClose }: Props) {
+export default function AddTaskModal({ agents, humanMembers = [], defaultTimeframe, onAdd, onClose }: Props) {
   const [title, setTitle]           = useState('')
   const [description, setDescription] = useState('')
   const [assigneeId, setAssigneeId] = useState(agents[0]?.id ?? '')
@@ -108,6 +109,26 @@ export default function AddTaskModal({ agents, defaultTimeframe, onAdd, onClose 
                   </div>
                 </button>
               ))}
+              {humanMembers.length > 0 && (
+                <>
+                  <div className="col-span-2 pt-1 pb-0.5">
+                    <p className="text-[9px] font-bold text-gray-400">👤 登録メンバー</p>
+                  </div>
+                  {humanMembers.map(m => (
+                    <button key={m.id} onClick={() => setAssigneeId(m.id)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-left transition-all ${assigneeId === m.id ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'}`}>
+                      <div className="w-6 h-6 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                        style={{ backgroundColor: m.color + '33' }}>
+                        {m.emoji}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-xs font-semibold truncate ${assigneeId === m.id ? 'text-indigo-700' : 'text-gray-800'}`}>{m.name}</p>
+                        <p className="text-[9px] text-gray-400 truncate">{m.role}</p>
+                      </div>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
 

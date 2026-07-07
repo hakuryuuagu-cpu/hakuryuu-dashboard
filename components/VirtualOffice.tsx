@@ -446,7 +446,7 @@ export default function VirtualOffice() {
         />
         <div className="flex-none w-[42%] flex flex-col min-h-0 overflow-hidden">
           <TaskBoard
-            agents={agents} tasks={tasks}
+            agents={agents} humanMembers={humanMembers} tasks={tasks}
             onAddTask={handleOpenAddTask}
             onUpdateStatus={handleUpdateStatus}
             onDeleteTask={handleDeleteTask}
@@ -464,7 +464,7 @@ export default function VirtualOffice() {
       </div>
 
       {showAddTask && (
-        <AddTaskModal agents={agents} defaultTimeframe={defaultTF} onAdd={handleAddTask} onClose={() => setShowAddTask(false)} />
+        <AddTaskModal agents={agents} humanMembers={humanMembers} defaultTimeframe={defaultTF} onAdd={handleAddTask} onClose={() => setShowAddTask(false)} />
       )}
       {showAddAgent && (
         <AddAgentModal onAdd={handleAddAgent} onClose={() => setShowAddAgent(false)} />
