@@ -39,39 +39,22 @@ export default function VirtualOffice() {
   // agentsのlocalStorage永続化
   // ※ 保存エフェクトをロードエフェクトより先に定義することで
   //   初回マウント時の誤上書きを防ぐ（Reactはエフェクトを定義順に実行する）
-  // agents / humanMembers の localStorage 永続化
-  // 保存エフェクトをロードエフェクトより先に定義し、初回の誤上書きを防ぐ
-  const agentsLoadedRef  = useRef(false)
-  const membersLoadedRef = useRef(false)
-
-  useEffect(() => {
-    if (!agentsLoadedRef.current) return
-    try { localStorage.setItem('hakuryuu_agents', JSON.stringify(agents)) } catch {}
-  }, [agents])
+  // マウント時に localStorage から復元（1回だけ）
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('hakuryuu_agents')
-      if (stored) {
-        const parsed = JSON.parse(stored) as AIAgent[]
+      const a = localStorage.getItem('hakuryuu_agents')
+      if (a) {
+        const parsed = JSON.parse(a) as AIAgent[]
         if (Array.isArray(parsed) && parsed.length > 0) setAgents(parsed)
       }
     } catch {}
-    agentsLoadedRef.current = true
-  }, [])
-
-  useEffect(() => {
-    if (!membersLoadedRef.current) return
-    try { localStorage.setItem('hakuryuu_human_members', JSON.stringify(humanMembers)) } catch {}
-  }, [humanMembers])
-  useEffect(() => {
     try {
-      const stored = localStorage.getItem('hakuryuu_human_members')
-      if (stored) {
-        const parsed = JSON.parse(stored) as HumanMember[]
+      const m = localStorage.getItem('hakuryuu_human_members')
+      if (m) {
+        const parsed = JSON.parse(m) as HumanMember[]
         if (Array.isArray(parsed)) setHumanMembers(parsed)
       }
     } catch {}
-    membersLoadedRef.current = true
   }, [])
 
   const agentsRef      = useRef(agents)
@@ -244,11 +227,19 @@ export default function VirtualOffice() {
   }, [])
 
   const handleAddHuman = useCallback((member: HumanMember) => {
-    setHumanMembers(prev => [...prev, member])
+    setHumanMembers(prev => {
+      const next = [...prev, member]
+      try { localStorage.setItem('hakuryuu_human_members', JSON.stringify(next)) } catch {}
+      return next
+    })
   }, [])
 
   const handleDeleteHuman = useCallback((id: string) => {
-    setHumanMembers(prev => prev.filter(m => m.id !== id))
+    setHumanMembers(prev => {
+      const next = prev.filter(m => m.id !== id)
+      try { localStorage.setItem('hakuryuu_human_members', JSON.stringify(next)) } catch {}
+      return next
+    })
   }, [])
 
   const handleAddAgent = useCallback((name: string, role: string, emoji: string, color: string) => {
@@ -257,7 +248,11 @@ export default function VirtualOffice() {
       initials: name.slice(0, 1), isCustom: true,
       description: `${role}担当として業務を遂行します。`, specialties: [role],
     }
-    setAgents(prev => [...prev, newAgent])
+    setAgents(prev => {
+      const next = [...prev, newAgent]
+      try { localStorage.setItem('hakuryuu_agents', JSON.stringify(next)) } catch {}
+      return next
+    })
     setShowAddAgent(false)
   }, [])
 
