@@ -16,10 +16,19 @@ interface SuggestedGoal {
   milestones?: string[]  // テキストのみ（idはフロントで付与）
 }
 
+interface MemberProfileInput {
+  jobTitle?: string
+  joinedDate?: string
+  strengths?: string
+  challenges?: string
+  notes?: string
+}
+
 export async function POST(req: NextRequest) {
-  const { assigneeName, period } = await req.json() as {
+  const { assigneeName, period, profile } = await req.json() as {
     assigneeName: string
     period: 'monthly' | 'quarterly' | 'annual'
+    profile?: MemberProfileInput
   }
 
   const geminiKey = cleanKey(process.env.GEMINI_API_KEY || '')
@@ -27,13 +36,26 @@ export async function POST(req: NextRequest) {
 
   const periodLabel = period === 'monthly' ? '月次' : period === 'quarterly' ? '四半期' : '年次'
 
+  // プロフィール文字列を生成
+  const profileText = profile ? (() => {
+    const lines: string[] = [`【${assigneeName}のプロフィール】`]
+    if (profile.jobTitle)   lines.push(`役職: ${profile.jobTitle}`)
+    if (profile.joinedDate) lines.push(`入社年月: ${profile.joinedDate}`)
+    if (profile.strengths)  lines.push(`強み・得意: ${profile.strengths}`)
+    if (profile.challenges) lines.push(`課題・成長ポイント: ${profile.challenges}`)
+    if (profile.notes)      lines.push(`備考: ${profile.notes}`)
+    return lines.join('\n')
+  })() : ''
+
   const prompt = `あなたは飲食店経営コンサルタントです。以下の情報をもとに、${assigneeName}の${periodLabel}目標を3件提案してください。
 
 ${getRestaurantContext()}
 
+${profileText ? profileText + '\n' : ''}
 【条件】
 - 担当者: ${assigneeName}
 - 期間: ${periodLabel}
+- ${profileText ? '上記のプロフィール（強み・課題・役職）を最大限に活かした個別最適な目標にすること' : '担当者の成長に繋がる現実的な目標にすること'}
 - 目標は「KPI目標（数値で測れるもの）」と「行動目標（マイルストーンで追えるもの）」を混ぜて提案
 - KPI目標: 具体的な数値ターゲットと単位を含める（例: 月間売上120万円、客単価7,500円、新規顧客10名）
 - 行動目標: 3〜4つの具体的なマイルストーンステップに分解
