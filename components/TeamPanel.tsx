@@ -170,10 +170,16 @@ export default function TeamPanel({ agents, tasks, humanMembers, onAddHuman, onD
         <div className="px-3 py-2.5 border-b border-gray-100 flex-shrink-0 bg-gray-50">
           <h2 className="text-[11px] font-bold text-gray-700">👥 チーム</h2>
           <p className="text-[9px] text-gray-400">AI {agents.length}名 · 人物 {humanMembers.length}名</p>
-          <Link href="/goals"
-            className="mt-2 flex items-center gap-1.5 px-2 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-700 transition-colors shadow-sm">
-            🎯 <span>目標管理</span>
-          </Link>
+          <div className="mt-2 flex gap-1.5">
+            <Link href="/goals"
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-indigo-600 text-white rounded-lg text-[10px] font-bold hover:bg-indigo-700 transition-colors shadow-sm">
+              🎯 <span>目標</span>
+            </Link>
+            <Link href="/properties"
+              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-sky-600 text-white rounded-lg text-[10px] font-bold hover:bg-sky-700 transition-colors shadow-sm">
+              🏢 <span>物件</span>
+            </Link>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-2">

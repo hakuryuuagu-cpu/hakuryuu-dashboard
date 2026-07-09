@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/property-search",
+      "schedule": "0 9 * * *"
+    }
+  ]
+}
