@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { getRestaurantContext } from '@/lib/restaurant-info'
 
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent'
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
@@ -30,7 +31,8 @@ function buildPrompt(agents: AgentInfo[], topic: string, round: 'initial' | 'sup
 
   const base =
     `あなたは以下の${agents.length}人のAIエージェントです。\n` +
-    `飲食店「あぐー豚しゃぶ 居酒屋 はくりゅう 錦」（名古屋市中区錦、個室居酒屋）の2号店出店プロジェクトチームです。\n\n` +
+    `2号店出店プロジェクトチームとして、以下の店舗情報を前提に議論してください。\n\n` +
+    getRestaurantContext() + `\n\n` +
     `[エージェント]\n${agentList}\n\n[質問]\n${topic}\n\n`
 
   const instructions: Record<typeof round, string> = {

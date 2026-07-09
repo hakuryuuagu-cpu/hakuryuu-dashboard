@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getRestaurantContext } from '@/lib/restaurant-info'
 
 function cleanKey(key: string): string {
   return key.replace(/[^\x20-\x7E]/g, '').trim()
@@ -35,7 +36,9 @@ export async function POST(req: NextRequest) {
     .map(a => `- ${a.name}（${a.role}）: ${a.specialties.join('、')}${a.isAudit ? '。リスク・監査担当。' : ''}`)
     .join('\n')
 
-  const prompt = `あなたは「あぐー豚しゃぶ 居酒屋 はくりゅう」2号店出店プロジェクトの専門AIチームです。
+  const prompt = `あなたは2号店出店プロジェクトの専門AIチームです。
+
+${getRestaurantContext()}
 
 現在進行中のタスク:
 ${taskList}
