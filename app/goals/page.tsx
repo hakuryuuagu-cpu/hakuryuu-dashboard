@@ -6,6 +6,7 @@ import {
   type Goal, type Milestone, type GoalPeriod, type GoalStatus,
   loadGoals, saveGoals, calcProgress, PERIOD_LABEL, PERIOD_OPTIONS,
 } from '@/lib/goals'
+import { loadProfiles } from '@/lib/member-profiles'
 
 // ─── 固定メンバー（VirtualOfficeと合わせてください） ──────────────────────
 const DEFAULT_MEMBERS = [
@@ -428,11 +429,23 @@ function AISuggestPanel({
     setSuggestions([])
     setSelected(new Set())
     const assignee = members.find(m => m.id === assigneeId)!
+    // プロフィールを取得してAPIに送る
+    const profile = loadProfiles().find(p => p.memberId === assigneeId)
     try {
       const res = await fetch('/api/suggest-goals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assigneeName: assignee.name, period }),
+        body: JSON.stringify({
+          assigneeName: assignee.name,
+          period,
+          profile: profile ? {
+            jobTitle:   profile.jobTitle,
+            joinedDate: profile.joinedDate,
+            strengths:  profile.strengths,
+            challenges: profile.challenges,
+            notes:      profile.notes,
+          } : undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok || data.error) { setError(data.error ?? 'エラーが発生しました'); return }
@@ -489,10 +502,19 @@ function AISuggestPanel({
       </div>
 
       <div className="flex gap-3 flex-wrap">
-        <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
-          className="flex-1 min-w-[140px] border border-violet-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300">
-          {members.map(m => <option key={m.id} value={m.id}>{m.emoji} {m.name}</option>)}
-        </select>
+        <div className="flex-1 min-w-[160px]">
+          <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)}
+            className="w-full border border-violet-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300">
+            {members.map(m => <option key={m.id} value={m.id}>{m.emoji} {m.name}</option>)}
+          </select>
+          {(() => {
+            const p = loadProfiles().find(prof => prof.memberId === assigneeId)
+            const filled = p && (p.strengths || p.challenges || p.notes)
+            return filled
+              ? <p className="text-[10px] text-violet-600 mt-1 pl-1">✅ プロフィール登録済み — 個別最適な提案が可能</p>
+              : <p className="text-[10px] text-gray-400 mt-1 pl-1">💡 プロフィールを入力するとより個別な提案になります</p>
+          })()}
+        </div>
         <select value={period} onChange={e => setPeriod(e.target.value as GoalPeriod)}
           className="flex-1 min-w-[120px] border border-violet-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-300">
           {PERIOD_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
