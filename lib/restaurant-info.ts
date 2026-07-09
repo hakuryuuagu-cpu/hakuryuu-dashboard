@@ -26,15 +26,33 @@ export const RESTAURANT_INFO = {
   // ─── メニュー・価格 ──────────────────────────────────────
   avgSpendPerPerson: 7000, // 客単価（円）
   signatureMenus: [
-    { name: 'あぐー豚しゃぶしゃぶ（1人前）', price: 1800, costRate: 0 }, // 原価率は原価計算表から要転記
-    { name: 'あぐー豚しゃぶ食べ放題',        price: 3500, costRate: 0 },
-    // ↓ 原価計算表から転記してください
-    // { name: 'メニュー名', price: 価格, costRate: 原価率（例: 0.30） },
+    // 【鍋】
+    { category: '鍋',    name: 'あぐー豚しゃぶしゃぶ 2人前',      price: 4545, costRate: 0.1364 },
+    { category: '鍋',    name: '蛤×あぐー豚しゃぶしゃぶ 2人前',   price: 8000, costRate: 0.3312 },
+    // 【一品】
+    { category: '一品',  name: 'あぐー冷しゃぶサラダ',            price: 1700, costRate: 0.3412 },
+    { category: '一品',  name: 'あぐー豚の回鍋肉',                price:  863, costRate: 0.4068 },
+    { category: '一品',  name: '天使エビとアボカドサラダ',         price: 1700, costRate: 0.3943 },
+    { category: '一品',  name: 'アスパラベーコン',                 price:  900, costRate: 0.5049 },
+    // 【おつまみ】
+    { category: 'おつまみ', name: 'クリームチーズ醤油漬け',       price:  654, costRate: 0.1262 },
+    { category: 'おつまみ', name: 'パリパリピーマン',             price:  427, costRate: 0.1874 },
+    { category: 'おつまみ', name: 'トマトスライス',               price:  545, costRate: 0.2064 },
+    { category: 'おつまみ', name: 'チャンジャクリームチーズ',     price:  772, costRate: 0.2580 },
+    { category: 'おつまみ', name: 'チャンジャ',                   price:  545, costRate: 0.2696 },
+    { category: 'おつまみ', name: 'トマトのカプレーゼ',           price:  754, costRate: 0.3930 },
+    // 【揚げ物】
+    { category: '揚げ物', name: '塩フライドポテト',               price:  545, costRate: 0.3547 },
+    { category: '揚げ物', name: 'アンチョビフライドポテト',       price:  545, costRate: 0.3897 },
+    // 【ご飯】
+    { category: 'ご飯',  name: '沖縄そば',                        price:  872, costRate: 0.1753 },
+    { category: 'ご飯',  name: 'うーどんチャンプルー',            price:  836, costRate: 0.4943 },
+    // 【デザート】
+    { category: 'デザート', name: 'ソフトクリーム プレミアムバニラ', price: 500, costRate: 0.2460 },
   ],
   drinkMenu: [
     { name: '生ビール',   price: 600 },
     { name: 'オリオン生', price: 600 },
-    // 追加してください
   ],
 
   // ─── ターゲット顧客 ──────────────────────────────────────
@@ -64,21 +82,28 @@ export const RESTAURANT_INFO = {
  */
 export function getRestaurantContext(): string {
   const m = RESTAURANT_INFO
-  const menuList = m.signatureMenus
-    .map(item => `  ・${item.name} ¥${item.price.toLocaleString()}${item.costRate > 0 ? `（原価率${Math.round(item.costRate * 100)}%）` : ''}`)
-    .join('\n')
+
+  // カテゴリ別にまとめる
+  const categories = [...new Set(m.signatureMenus.map(i => (i as { category?: string; name: string; price: number; costRate: number }).category ?? 'その他'))]
+  const menuByCategory = categories.map(cat => {
+    const items = m.signatureMenus
+      .filter(i => ((i as { category?: string }).category ?? 'その他') === cat)
+      .map(i => `    ・${i.name} ¥${i.price.toLocaleString()}（原価率${Math.round(i.costRate * 100)}%）`)
+      .join('\n')
+    return `  【${cat}】\n${items}`
+  }).join('\n')
 
   return `
 【店舗基本情報】
 店名: ${m.name}（${m.branch}）
-所在地: ${m.address}
-席数: ${m.seats > 0 ? `${m.seats}席` : '未設定'}
+所在地: ${m.address}　TEL: ${m.tel}
+席数: ${m.seats}席　開業: ${m.openedYear}年
 営業時間: ${m.hours}　定休: ${m.closedDays}
 客単価: 約¥${m.avgSpendPerPerson.toLocaleString()}
 コンセプト: ${m.concept}
 
-【看板メニュー】
-${menuList || '  （未設定）'}
+【現在のメニューと原価率】
+${menuByCategory}
 
 【強み】
 ${m.strengths.map(s => `  ・${s}`).join('\n')}
@@ -87,8 +112,7 @@ ${m.strengths.map(s => `  ・${s}`).join('\n')}
 ${m.targetCustomers.map(t => `  ・${t}`).join('\n')}
 
 【2号店プロジェクト概要】
-出店エリア: ${m.project2.targetArea}
-目標: ${m.project2.targetOpenDate}オープン / ${m.project2.targetSeats > 0 ? `${m.project2.targetSeats}席` : '席数未定'} / 予算${m.project2.budget}
+出店エリア: ${m.project2.targetArea}　目標: ${m.project2.targetOpenDate}
 コンセプト: ${m.project2.concept}
 `.trim()
 }
