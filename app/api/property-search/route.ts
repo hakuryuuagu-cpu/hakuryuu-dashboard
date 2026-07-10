@@ -71,6 +71,35 @@ async function searchSerpAPI(query: string) {
   } catch { return [] }
 }
 
+// ── 不動産関連ドメインフィルター ──────────────────────────────────────────
+const REAL_ESTATE_DOMAINS = [
+  'suumo.jp', 'athome.co.jp', 'homes.co.jp', 'chintai.com',
+  'tatemono-navi.com', 'e-buken.jp', 'irent.jp', 'kanri.net',
+  'fudousan.com', 'rakumachi.jp', '居抜き.jp', 'inshoku-bu.net',
+  'tenpo-souken.com', 'inshokutenpo.com', 'qubit.co.jp',
+  'navi.tenpo-estate.com', 'cbre.co.jp', 'jll.co.jp',
+  'century21.jp', 'housecom.jp', 'remax-japan.jp',
+]
+
+const PROPERTY_KEYWORDS = [
+  '物件', 'テナント', '賃貸', '居抜き', 'スケルトン', '坪', '万円',
+  '店舗', '空き', 'for rent', '初期費用', '礼金', '敷金',
+]
+
+function isPropertyResult(r: { title: string; link: string; snippet: string }): boolean {
+  const domain = (() => {
+    try { return new URL(r.link).hostname.replace('www.', '') } catch { return '' }
+  })()
+
+  // 不動産ドメインならOK
+  if (REAL_ESTATE_DOMAINS.some(d => domain.includes(d))) return true
+
+  // タイトル・スニペットに物件キーワードが含まれればOK
+  const text = `${r.title} ${r.snippet}`.toLowerCase()
+  const matchCount = PROPERTY_KEYWORDS.filter(kw => text.includes(kw)).length
+  return matchCount >= 2
+}
+
 // ── 検索実行 ──────────────────────────────────────────────────────────────
 interface SearchConditions {
   area?:         string
@@ -80,24 +109,29 @@ interface SearchConditions {
 }
 
 async function runSearch(conditions: SearchConditions) {
-  const area     = (conditions.area ?? '名古屋市中区 錦').trim()
-  const type     = conditions.propertyType === 'どちらでも' ? '' : (conditions.propertyType ?? '居抜き')
-  const extra    = conditions.keywords ?? ''
+  const area  = (conditions.area ?? '名古屋市中区 錦').trim()
+  const type  = conditions.propertyType === 'どちらでも' ? '' : (conditions.propertyType ?? '居抜き')
+  const extra = conditions.keywords ?? ''
 
-  // 複数クエリで検索幅を広げる
+  // 不動産サイト限定クエリ
   const queries = [
-    `${area} 飲食店 ${type} テナント 物件 ${extra}`.replace(/\s+/g, ' ').trim(),
-    `${area} 居酒屋 テナント 物件 空き`.trim(),
-    `${area} 飲食店 物件 site:suumo.jp OR site:athome.co.jp`.trim(),
+    `${area} 飲食店 ${type} テナント 物件 site:suumo.jp OR site:athome.co.jp OR site:homes.co.jp`.replace(/\s+/g, ' ').trim(),
+    `${area} 飲食店 ${type} テナント 物件 site:tatemono-navi.com OR site:irent.jp OR site:rakumachi.jp`.replace(/\s+/g, ' ').trim(),
+    `名古屋 錦 飲食店 ${type} 店舗 賃貸 ${extra}`.replace(/\s+/g, ' ').trim(),
   ]
 
   const newItems: string[] = []
   let searchTotal = 0
+  let skippedTotal = 0
 
   for (const query of queries) {
     const results = await searchSerpAPI(query)
     for (const r of results) {
       if (!r.link) continue
+
+      // 物件関連でないページはスキップ
+      if (!isPropertyResult(r)) { skippedTotal++; continue }
+
       searchTotal++
       const exists = await urlExists(r.link)
       if (exists) continue
@@ -116,7 +150,8 @@ async function runSearch(conditions: SearchConditions) {
     newCount:     newItems.length,
     searchTotal,
     newProperties: newItems,
-    message: `${newItems.length}件の新着物件を保存しました（検索${searchTotal}件中）`,
+    skippedTotal,
+    message: `${newItems.length}件の新着物件を保存しました（物件候補${searchTotal}件 / 非関連除外${skippedTotal}件）`,
   }
 }
 
