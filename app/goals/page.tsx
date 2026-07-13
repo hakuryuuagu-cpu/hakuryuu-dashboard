@@ -4,9 +4,9 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import {
   type Goal, type Milestone, type GoalPeriod, type GoalStatus,
-  loadGoals, saveGoals, calcProgress, PERIOD_LABEL, PERIOD_OPTIONS,
+  calcProgress, PERIOD_LABEL, PERIOD_OPTIONS,
 } from '@/lib/goals'
-import { loadProfiles } from '@/lib/member-profiles'
+import type { MemberProfile } from '@/lib/member-profiles'
 
 // ─── 固定メンバー（VirtualOfficeと合わせてください） ──────────────────────
 const DEFAULT_MEMBERS = [
@@ -410,9 +410,10 @@ function AddGoalForm({
 
 // ─── AI提案バナー ─────────────────────────────────────────────────────────
 function AISuggestPanel({
-  members, onAccept,
+  members, profiles, onAccept,
 }: {
   members: typeof DEFAULT_MEMBERS
+  profiles: MemberProfile[]
   onAccept: (goals: Omit<Goal, 'id' | 'createdAt' | 'status'>[]) => void
 }) {
   const [open, setOpen]         = useState(false)
@@ -429,8 +430,8 @@ function AISuggestPanel({
     setSuggestions([])
     setSelected(new Set())
     const assignee = members.find(m => m.id === assigneeId)!
-    // プロフィールを取得してAPIに送る
-    const profile = loadProfiles().find(p => p.memberId === assigneeId)
+    // プロフィールをpropsから取得してAPIに送る
+    const profile = profiles.find(p => p.memberId === assigneeId)
     try {
       const res = await fetch('/api/suggest-goals', {
         method: 'POST',
@@ -508,7 +509,7 @@ function AISuggestPanel({
             {members.map(m => <option key={m.id} value={m.id}>{m.emoji} {m.name}</option>)}
           </select>
           {(() => {
-            const p = loadProfiles().find(prof => prof.memberId === assigneeId)
+            const p = profiles.find(prof => prof.memberId === assigneeId)
             const filled = p && (p.strengths || p.challenges || p.notes)
             return filled
               ? <p className="text-[10px] text-violet-600 mt-1 pl-1">✅ プロフィール登録済み — 個別最適な提案が可能</p>
@@ -569,63 +570,74 @@ function AISuggestPanel({
   )
 }
 
+const J = (b: object) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })
+
 // ─── メインページ ─────────────────────────────────────────────────────────
 export default function GoalsPage() {
   const [goals, setGoals]             = useState<Goal[]>([])
+  const [profiles, setProfiles]       = useState<MemberProfile[]>([])
   const [showAdd, setShowAdd]         = useState(false)
+  const [loadingGoals, setLoadingGoals] = useState(true)
   const [filterAssignee, setFilterAssignee] = useState<string>('all')
   const [filterPeriod, setFilterPeriod]     = useState<GoalPeriod | 'all'>('all')
   const [filterStatus, setFilterStatus]     = useState<GoalStatus | 'all'>('active')
 
-  // localStorage から読込み
-  useEffect(() => { setGoals(loadGoals()) }, [])
+  // Notion から読込み（全端末で共有）
+  useEffect(() => {
+    fetch('/api/goals')
+      .then(r => r.json())
+      .then(d => setGoals(d.goals ?? []))
+      .catch(() => {})
+      .finally(() => setLoadingGoals(false))
+    fetch('/api/profiles')
+      .then(r => r.json())
+      .then(d => setProfiles(d.profiles ?? []))
+      .catch(() => {})
+  }, [])
 
-  const persist = (next: Goal[]) => { setGoals(next); saveGoals(next) }
+  // メンバー一覧（固定）
+  const members = DEFAULT_MEMBERS
 
-  // ── メンバー一覧: localStorage に AIエージェントと人間メンバーが保存されている場合は読む
-  const members = (() => {
-    try {
-      const agents: { id: string; name: string; color: string }[] =
-        JSON.parse(localStorage.getItem('hakuryuu_agents') ?? '[]')
-      const humans: { id: string; name: string; color: string; emoji: string }[] =
-        JSON.parse(localStorage.getItem('hakuryuu_human_members') ?? '[]')
-      const all = [
-        ...agents.map(a => ({ id: a.id, name: a.name, color: a.color, emoji: '🤖' })),
-        ...humans.map(h => ({ id: h.id, name: h.name, color: h.color, emoji: h.emoji ?? '👤' })),
-      ]
-      return all.length > 0 ? all : DEFAULT_MEMBERS
-    } catch { return DEFAULT_MEMBERS }
-  })()
+  const addGoals = useCallback(async (defs: Omit<Goal, 'id' | 'createdAt' | 'status'>[]) => {
+    for (const d of defs) {
+      const tempId = `temp_${uid()}`
+      const newGoal: Goal = { ...d, id: tempId, createdAt: new Date().toISOString(), status: 'active' }
+      setGoals(prev => [...prev, newGoal])
+      const res = await fetch('/api/goals', J(newGoal))
+      const data = await res.json()
+      if (data.goal) setGoals(prev => prev.map(g => g.id === tempId ? data.goal : g))
+    }
+  }, [])
 
-  const addGoals = useCallback((defs: Omit<Goal, 'id' | 'createdAt' | 'status'>[]) => {
-    const newGoals: Goal[] = defs.map(d => ({
-      ...d,
-      id: uid(),
-      createdAt: new Date().toISOString(),
-      status: 'active',
-    }))
-    persist([...goals, ...newGoals])
-  }, [goals])
+  const updateKpiValue = async (id: string, val: number) => {
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, currentValue: val } : g))
+    await fetch('/api/goals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, currentValue: val }) })
+  }
 
-  const updateKpiValue = (id: string, val: number) =>
-    persist(goals.map(g => g.id === id ? { ...g, currentValue: val } : g))
-
-  const toggleMilestone = (goalId: string, msId: string) =>
-    persist(goals.map(g => {
+  const toggleMilestone = async (goalId: string, msId: string) => {
+    setGoals(prev => prev.map(g => {
       if (g.id !== goalId) return g
-      return {
-        ...g,
-        milestones: g.milestones?.map(m => m.id === msId ? { ...m, done: !m.done } : m),
-      }
+      const milestones = g.milestones?.map(m => m.id === msId ? { ...m, done: !m.done } : m)
+      return { ...g, milestones }
     }))
+    const goal = goals.find(g => g.id === goalId)
+    if (!goal) return
+    const milestones = goal.milestones?.map(m => m.id === msId ? { ...m, done: !m.done } : m)
+    await fetch('/api/goals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: goalId, milestones }) })
+  }
 
-  const toggleStatus = (id: string) =>
-    persist(goals.map(g => {
-      if (g.id !== id) return g
-      return { ...g, status: g.status === 'completed' ? 'active' : 'completed' }
-    }))
+  const toggleStatus = async (id: string) => {
+    const goal = goals.find(g => g.id === id)
+    if (!goal) return
+    const status = goal.status === 'completed' ? 'active' : 'completed'
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, status } : g))
+    await fetch('/api/goals', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status }) })
+  }
 
-  const deleteGoal = (id: string) => persist(goals.filter(g => g.id !== id))
+  const deleteGoal = async (id: string) => {
+    setGoals(prev => prev.filter(g => g.id !== id))
+    await fetch('/api/goals', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+  }
 
   // フィルタ
   const filtered = goals.filter(g =>
@@ -659,7 +671,7 @@ export default function GoalsPage() {
         <h1 className="text-lg font-black text-gray-800">🎯 目標管理</h1>
         <p className="text-xs text-gray-400">はくりゅう 2号店出店プロジェクト</p>
         <div className="ml-auto flex items-center gap-3">
-          <AISuggestPanel members={members} onAccept={addGoals} />
+          <AISuggestPanel members={members} profiles={profiles} onAccept={addGoals} />
           <button onClick={() => setShowAdd(true)}
             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm">
             ＋ 目標を追加
@@ -713,8 +725,15 @@ export default function GoalsPage() {
           )}
         </div>
 
+        {/* ── 読込中 ── */}
+        {loadingGoals && (
+          <div className="flex justify-center py-20">
+            <div className="animate-spin text-4xl">🎯</div>
+          </div>
+        )}
+
         {/* ── 目標なし ── */}
-        {goals.length === 0 && (
+        {!loadingGoals && goals.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <div className="text-6xl mb-4 opacity-30">🎯</div>
             <p className="text-gray-500 font-bold mb-2">まだ目標が設定されていません</p>

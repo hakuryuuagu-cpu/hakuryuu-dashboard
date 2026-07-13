@@ -4,7 +4,6 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { AIAgent, Task, HumanMember } from '@/lib/types'
 import type { MemberProfile } from '@/lib/member-profiles'
-import { loadProfiles, upsertProfile } from '@/lib/member-profiles'
 
 const MEMBER_COLORS = ['#6366f1','#0ea5e9','#10b981','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6']
 const MEMBER_EMOJIS = ['👤','👩','👨','🧑','👩‍💼','👨‍💼','🧑‍🍳','👩‍🍳']
@@ -26,23 +25,44 @@ function ProfileModal({
   member: HumanMember
   onClose: () => void
 }) {
-  const existing = loadProfiles().find(p => p.memberId === member.id)
   const [form, setForm] = useState<Omit<MemberProfile, 'memberId' | 'updatedAt'>>({
-    jobTitle:   existing?.jobTitle   ?? '',
-    joinedDate: existing?.joinedDate ?? '',
-    strengths:  existing?.strengths  ?? '',
-    challenges: existing?.challenges ?? '',
-    notes:      existing?.notes      ?? '',
+    jobTitle:   '',
+    joinedDate: '',
+    strengths:  '',
+    challenges: '',
+    notes:      '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  // Notionからプロフィールを読込み
+  useState(() => {
+    fetch('/api/profiles')
+      .then(r => r.json())
+      .then(d => {
+        const existing = (d.profiles ?? []).find((p: MemberProfile) => p.memberId === member.id)
+        if (existing) setForm({
+          jobTitle:   existing.jobTitle   ?? '',
+          joinedDate: existing.joinedDate ?? '',
+          strengths:  existing.strengths  ?? '',
+          challenges: existing.challenges ?? '',
+          notes:      existing.notes      ?? '',
+        })
+      })
+      .catch(() => {})
   })
 
   const set = (k: Partial<typeof form>) => setForm(p => ({ ...p, ...k }))
 
-  const handleSave = () => {
-    upsertProfile({
-      memberId:   member.id,
-      updatedAt:  new Date().toISOString(),
-      ...form,
-    })
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await fetch('/api/profiles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memberId: member.id, ...form }),
+      })
+    } catch {}
+    setSaving(false)
     onClose()
   }
 
@@ -127,9 +147,10 @@ function ProfileModal({
         <div className="px-5 pb-5">
           <button
             onClick={handleSave}
-            className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-sm"
+            disabled={saving}
+            className="w-full py-3 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 disabled:opacity-60 transition-colors shadow-sm"
           >
-            保存する
+            {saving ? '保存中…' : '保存する'}
           </button>
         </div>
       </div>
